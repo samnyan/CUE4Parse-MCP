@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Text.Json;
+using CUE4Parse.Mcp.Dtos;
 using CUE4Parse.Mcp.Services;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Objects.UObject;
 using ModelContextProtocol.Server;
-using NewtonsoftJsonSerializer = Newtonsoft.Json.JsonSerializer;
 using NewtonsoftJsonConvert = Newtonsoft.Json.JsonConvert;
 
 namespace CUE4Parse.Mcp.Tools;
@@ -41,12 +41,11 @@ public static class PackageTools
 
         if (!session.Provider.TryLoadPackage(fixedPath, out var package))
         {
-            // Try original path if FixPath didn't work
             if (!session.Provider.TryLoadPackage(packagePath, out package))
                 return Error("Package not found", $"Could not load package at '{packagePath}'. Use search_assets to find valid paths.");
         }
 
-        var exportSummaries = new List<object>();
+        var exportSummaries = new List<ExportSummaryDto>();
         for (var i = 0; i < package.ExportsLazy.Length; i++)
         {
             try
@@ -54,23 +53,23 @@ public static class PackageTools
                 var export = package.GetExport(i);
                 if (export != null)
                 {
-                    exportSummaries.Add(new
+                    exportSummaries.Add(new ExportSummaryDto
                     {
-                        index = i,
-                        name = export.Name,
-                        type = export.ExportType,
-                        path = export.GetPathName()
+                        Index = i,
+                        Name = export.Name,
+                        Type = export.ExportType,
+                        Path = export.GetPathName()
                     });
                 }
             }
             catch (Exception ex)
             {
-                exportSummaries.Add(new
+                exportSummaries.Add(new ExportSummaryDto
                 {
-                    index = i,
-                    name = $"Export_{i}",
-                    type = "Unknown",
-                    error = ex.Message
+                    Index = i,
+                    Name = $"Export_{i}",
+                    Type = "Unknown",
+                    Error = ex.Message
                 });
             }
         }
@@ -128,28 +127,28 @@ public static class PackageTools
         var skip = Math.Max(0, cursor ?? 0);
         var totalExports = package.ExportsLazy.Length;
 
-        var exports = new List<object>();
+        var exports = new List<ExportSummaryDto>();
         for (var i = skip; i < Math.Min(skip + maxLimit, totalExports); i++)
         {
             try
             {
                 var export = package.GetExport(i);
-                exports.Add(new
+                exports.Add(new ExportSummaryDto
                 {
-                    index = i,
-                    name = export?.Name ?? $"Export_{i}",
-                    type = export?.ExportType ?? "Unknown",
-                    path = export?.GetPathName() ?? ""
+                    Index = i,
+                    Name = export?.Name ?? $"Export_{i}",
+                    Type = export?.ExportType ?? "Unknown",
+                    Path = export?.GetPathName() ?? ""
                 });
             }
             catch (Exception ex)
             {
-                exports.Add(new
+                exports.Add(new ExportSummaryDto
                 {
-                    index = i,
-                    name = $"Export_{i}",
-                    type = "Unknown",
-                    error = ex.Message
+                    Index = i,
+                    Name = $"Export_{i}",
+                    Type = "Unknown",
+                    Error = ex.Message
                 });
             }
         }
@@ -167,12 +166,13 @@ public static class PackageTools
     }
 
     [McpServerTool(Name = "get_object_summary"), Description(
-        "Load a specific UObject and return its type, name, outer, class, and a summary of its properties. " +
-        "The objectPath should be the package path followed by '.' and the export name " +
+        "Load one or more UObjects and return their type, name, outer, class, and a summary of their properties. " +
+        "Accepts a single objectPath or multiple comma-separated paths for batch queries. " +
+        "Each objectPath should be the package path followed by '.' and the export name " +
         "(e.g. 'GameName/Content/Path/Asset.uasset.ExportName').")]
     public static string GetObjectSummary(
         Cue4ParseSessionRegistry sessions,
-        [Description("Full object path: packagePath.exportName (e.g. 'GameName/Content/Path/Asset.uasset.MainObject').")]
+        [Description("Full object path or comma-separated paths (e.g. 'GameName/Content/Path/Asset.uasset.MainObject' or 'path1,obj2,path3').")]
         string objectPath,
         [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
         string? sessionId = null)
@@ -181,38 +181,67 @@ public static class PackageTools
         if (session == null)
             return Error("No session", "No provider session found. Call init_provider first.");
 
-        UObject? obj;
-        try
-        {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
-        }
-        catch (Exception ex)
-        {
-            return Error("Load failed", ex.Message);
-        }
+        var paths = objectPath.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var results = new List<ObjectSummaryDto>();
 
-        if (obj == null)
-            return Error("Object not found", $"Could not load object at '{objectPath}'.");
-
-        var properties = new List<object>();
-        foreach (var prop in obj.Properties.Take(50))
+        foreach (var path in paths)
         {
             try
             {
-                properties.Add(new
+                var obj = session.Provider.SafeLoadPackageObject(path);
+                if (obj == null)
                 {
-                    name = prop.Name.Text,
-                    type = prop.PropertyType.Text,
-                    arrayIndex = prop.ArrayIndex
+                    results.Add(new ObjectSummaryDto
+                    {
+                        ObjectPath = path,
+                        Error = $"Could not load object at '{path}'."
+                    });
+                    continue;
+                }
+
+                var properties = new List<PropertySummaryDto>();
+                foreach (var prop in obj.Properties.Take(50))
+                {
+                    try
+                    {
+                        properties.Add(new PropertySummaryDto
+                        {
+                            Name = prop.Name.Text,
+                            Type = prop.PropertyType.Text,
+                            ArrayIndex = prop.ArrayIndex
+                        });
+                    }
+                    catch
+                    {
+                        properties.Add(new PropertySummaryDto
+                        {
+                            Name = prop.Name.Text,
+                            Type = "Unknown",
+                            ArrayIndex = prop.ArrayIndex
+                        });
+                    }
+                }
+
+                results.Add(new ObjectSummaryDto
+                {
+                    ObjectPath = path,
+                    Name = obj.Name,
+                    Type = obj.ExportType,
+                    FullName = obj.GetFullName(),
+                    PathName = obj.GetPathName(),
+                    Outer = obj.Outer?.GetPathName(),
+                    Class = obj.Class?.Name.Text,
+                    Flags = obj.Flags.ToString(),
+                    PropertyCount = obj.Properties.Count,
+                    Properties = properties
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                properties.Add(new
+                results.Add(new ObjectSummaryDto
                 {
-                    name = prop.Name.Text,
-                    type = "Unknown",
-                    arrayIndex = prop.ArrayIndex
+                    ObjectPath = path,
+                    Error = ex.Message
                 });
             }
         }
@@ -220,32 +249,25 @@ public static class PackageTools
         var result = new
         {
             ok = true,
-            objectPath = objectPath,
-            name = obj.Name,
-            type = obj.ExportType,
-            fullName = obj.GetFullName(),
-            pathName = obj.GetPathName(),
-            outer = obj.Outer?.GetPathName(),
-            @class = obj.Class?.Name.Text,
-            flags = obj.Flags.ToString(),
-            propertyCount = obj.Properties.Count,
-            properties = properties
+            queried = paths.Length,
+            objects = results
         };
 
         return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
     }
 
     [McpServerTool(Name = "get_object_json"), Description(
-        "Serialize a UObject to JSON with depth and size limits. " +
-        "Returns the JSON representation of the object's properties. " +
-        "The output is truncated if it exceeds maxBytes.")]
+        "Serialize one or more UObjects to JSON with depth and size limits. " +
+        "Accepts a single objectPath or multiple comma-separated paths for batch queries. " +
+        "Returns the JSON representation of each object's properties. " +
+        "Each object's output is truncated if it exceeds maxBytes.")]
     public static string GetObjectJson(
         Cue4ParseSessionRegistry sessions,
-        [Description("Full object path: packagePath.exportName.")]
+        [Description("Full object path or comma-separated paths (e.g. 'path1.uasset.Obj1' or 'path1.Obj1,path2.Obj2').")]
         string objectPath,
         [Description("Maximum serialization depth. Default: 4.")]
         int? maxDepth = null,
-        [Description("Maximum JSON output size in bytes. Default: 262144 (256 KB).")]
+        [Description("Maximum JSON output size in bytes per object. Default: 262144 (256 KB).")]
         int? maxBytes = null,
         [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
         string? sessionId = null)
@@ -254,56 +276,73 @@ public static class PackageTools
         if (session == null)
             return Error("No session", "No provider session found. Call init_provider first.");
 
-        UObject? obj;
-        try
-        {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
-        }
-        catch (Exception ex)
-        {
-            return Error("Load failed", ex.Message);
-        }
-
-        if (obj == null)
-            return Error("Object not found", $"Could not load object at '{objectPath}'.");
-
+        var paths = objectPath.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var depth = Math.Clamp(maxDepth ?? DefaultMaxDepth, 1, 20);
         var maxOutputBytes = Math.Clamp(maxBytes ?? DefaultMaxJsonBytes, 1024, 4 * 1024 * 1024);
 
-        string json;
-        try
+        var results = new List<object>();
+
+        foreach (var path in paths)
         {
-            var settings = new Newtonsoft.Json.JsonSerializerSettings
+            UObject? obj;
+            try
             {
-                Formatting = Newtonsoft.Json.Formatting.Indented,
-                MaxDepth = depth,
-                ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
-                Error = (_, args) => args.ErrorContext.Handled = true
-            };
+                obj = session.Provider.SafeLoadPackageObject(path);
+            }
+            catch (Exception ex)
+            {
+                results.Add(new { objectPath = path, error = ex.Message });
+                continue;
+            }
 
-            json = NewtonsoftJsonConvert.SerializeObject(obj, settings);
-        }
-        catch (Exception ex)
-        {
-            return Error("Serialization failed", ex.Message);
-        }
+            if (obj == null)
+            {
+                results.Add(new { objectPath = path, error = $"Could not load object at '{path}'." });
+                continue;
+            }
 
-        var truncated = false;
-        if (json.Length > maxOutputBytes)
-        {
-            json = json[..maxOutputBytes] + "\n... [truncated]";
-            truncated = true;
+            string json;
+            try
+            {
+                var settings = new Newtonsoft.Json.JsonSerializerSettings
+                {
+                    Formatting = Newtonsoft.Json.Formatting.Indented,
+                    MaxDepth = depth,
+                    ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
+                    Error = (_, args) => args.ErrorContext.Handled = true
+                };
+
+                json = NewtonsoftJsonConvert.SerializeObject(obj, settings);
+            }
+            catch (Exception ex)
+            {
+                results.Add(new { objectPath = path, error = $"Serialization failed: {ex.Message}" });
+                continue;
+            }
+
+            var truncated = false;
+            if (json.Length > maxOutputBytes)
+            {
+                json = json[..maxOutputBytes] + "\n... [truncated]";
+                truncated = true;
+            }
+
+            results.Add(new
+            {
+                objectPath = path,
+                name = obj.Name,
+                type = obj.ExportType,
+                truncated,
+                jsonLength = json.Length,
+                json
+            });
         }
 
         var result = new
         {
             ok = true,
-            objectPath = objectPath,
-            name = obj.Name,
-            type = obj.ExportType,
-            truncated,
-            jsonLength = json.Length,
-            json
+            queried = paths.Length,
+            objects = results
         };
 
         return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);

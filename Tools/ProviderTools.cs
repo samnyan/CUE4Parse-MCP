@@ -4,9 +4,12 @@ using System.Text.Json;
 using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.MappingsProvider.Usmap;
+using CUE4Parse.Mcp.Dtos;
 using CUE4Parse.Mcp.Services;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Versions;
+using CUE4Parse.UE4.VirtualFileSystem;
+using CUE4Parse.Utils;
 using ModelContextProtocol.Server;
 
 namespace CUE4Parse.Mcp.Tools;
@@ -231,6 +234,87 @@ public static class ProviderTools
         return JsonSerializer.Serialize(result, McpJsonOptions.Default);
     }
 
+    [McpServerTool(Name = "survey_provider"), Description(
+        "Get a comprehensive overview of the provider in one call: project name, file statistics by extension, " +
+        "mounted/unmounted VFS archives, encryption status, top-level directories, and mappings status. " +
+        "Call this after init_provider (and optionally submit_key) to understand the game's asset structure.")]
+    public static string SurveyProvider(
+        Cue4ParseSessionRegistry sessions,
+        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
+        string? sessionId = null)
+    {
+        var session = sessions.GetSession(sessionId);
+        if (session == null)
+            return Error("No session", "No provider session found. Call init_provider first.");
+
+        var provider = session.Provider;
+
+        // File extension statistics
+        var extStats = provider.Files
+            .GroupBy(f => f.Value.Extension)
+            .Select(g => new ExtensionStatsDto
+            {
+                Extension = g.Key,
+                Count = g.Count(),
+                TotalSizeBytes = g.Sum(f => f.Value.Size)
+            })
+            .OrderByDescending(s => s.Count)
+            .Take(20)
+            .ToList();
+
+        // Mounted VFS archives
+        var mountedArchives = provider.MountedVfs.Select(r => new VfsArchiveDto
+        {
+            Name = r.Name,
+            Path = r.Path,
+            IsEncrypted = r.IsEncrypted,
+            FileCount = r.FileCount,
+            Length = r is IAesVfsReader aes ? aes.Length : 0,
+            MountPoint = r.MountPoint
+        }).ToList();
+
+        // Unloaded (encrypted/not yet mounted) VFS archives
+        var unloadedArchives = provider.UnloadedVfs.Select(r => new VfsArchiveDto
+        {
+            Name = r.Name,
+            Path = r.Path,
+            IsEncrypted = r.IsEncrypted,
+            FileCount = r.FileCount,
+            Length = r.Length,
+            MountPoint = r.MountPoint
+        }).ToList();
+
+        // Top-level directories (first path segment)
+        var topDirs = provider.Files.Keys
+            .Select(p => p.SubstringBefore('/'))
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Distinct()
+            .OrderBy(s => s)
+            .Take(30)
+            .ToList();
+
+        var survey = new SurveyProviderDto
+        {
+            SessionId = session.SessionId,
+            ProjectName = provider.ProjectName,
+            GameVersion = session.GameVersion.ToString(),
+            RootDirectory = session.RootDirectory,
+            TotalFiles = provider.Files.Count,
+            LooseFileCount = provider.LooseFileCount,
+            MountedVfsCount = mountedArchives.Count,
+            UnloadedVfsCount = unloadedArchives.Count,
+            EncryptedArchiveCount = unloadedArchives.Count(a => a.IsEncrypted),
+            Extensions = extStats,
+            MountedArchives = mountedArchives,
+            UnloadedArchives = unloadedArchives,
+            HasMappings = provider.MappingsContainer?.MappingsForGame != null,
+            Warnings = session.Warnings,
+            TopLevelDirectories = topDirs
+        };
+
+        return JsonSerializer.Serialize(survey, McpJsonOptions.Default);
+    }
+
     [McpServerTool(Name = "list_sessions"), Description(
         "List all active provider sessions with their metadata.")]
     public static string ListSessions(
@@ -239,14 +323,14 @@ public static class ProviderTools
         var result = new
         {
             ok = true,
-            sessions = sessions.GetAllSessions().Select(s => new
+            sessions = sessions.GetAllSessions().Select(s => new SessionInfoDto
             {
-                sessionId = s.SessionId,
-                rootDirectory = s.RootDirectory,
-                gameVersion = s.GameVersion.ToString(),
-                fileCount = s.Provider.Files.Count,
-                encryptedArchives = s.EncryptedArchiveCount,
-                createdAt = s.CreatedAt.ToString("o")
+                SessionId = s.SessionId,
+                RootDirectory = s.RootDirectory,
+                GameVersion = s.GameVersion.ToString(),
+                FileCount = s.Provider.Files.Count,
+                EncryptedArchives = s.EncryptedArchiveCount,
+                CreatedAt = s.CreatedAt.ToString("o")
             }).ToArray()
         };
 

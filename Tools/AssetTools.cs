@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json;
+using CUE4Parse.Mcp.Dtos;
 using CUE4Parse.Mcp.Services;
 using ModelContextProtocol.Server;
 
@@ -58,13 +59,13 @@ public static class AssetTools
         var result = new
         {
             ok = true,
-            items = page.Select(f => new
+            items = page.Select(f => new FileEntryDto
             {
-                path = f.Key,
-                name = f.Value.Name,
-                extension = f.Value.Extension,
-                size = f.Value.Size,
-                isUePackage = f.Value.IsUePackage
+                Path = f.Key,
+                Name = f.Value.Name,
+                Extension = f.Value.Extension,
+                Size = f.Value.Size,
+                IsUePackage = f.Value.IsUePackage
             }).ToArray(),
             nextCursor = skip + maxLimit < totalCount ? skip + maxLimit : (int?)null,
             totalEstimate = totalCount
@@ -117,13 +118,13 @@ public static class AssetTools
         {
             ok = true,
             query = query,
-            items = page.Select(f => new
+            items = page.Select(f => new FileEntryDto
             {
-                path = f.Key,
-                name = f.Value.Name,
-                extension = f.Value.Extension,
-                size = f.Value.Size,
-                isUePackage = f.Value.IsUePackage
+                Path = f.Key,
+                Name = f.Value.Name,
+                Extension = f.Value.Extension,
+                Size = f.Value.Size,
+                IsUePackage = f.Value.IsUePackage
             }).ToArray(),
             nextCursor = skip + maxLimit < totalCount ? skip + maxLimit : (int?)null,
             totalEstimate = totalCount
