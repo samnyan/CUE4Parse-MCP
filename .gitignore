@@ -1,0 +1,35 @@
+## .NET
+bin/
+obj/
+*.dll
+*.pdb
+*.exe
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.cache
+
+## OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## Logs
+*.log
+logs/
+
+## Secrets / local config
+appsettings.*.json
+!appsettings.json
+.env
+*.key
