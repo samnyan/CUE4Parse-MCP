@@ -105,6 +105,9 @@ public class DataTableRowDto
 {
     [JsonPropertyName("rowName")] public string RowName { get; set; } = "";
     [JsonPropertyName("properties")] public List<PropertySummaryDto> Properties { get; set; } = [];
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("totalJsonLength")] public int TotalJsonLength { get; set; }
+    [JsonPropertyName("returnedJsonLength")] public int ReturnedJsonLength { get; set; }
     [JsonPropertyName("json")] public JsonNode? Json { get; set; }
     [JsonPropertyName("error")] public string? Error { get; set; }
 }
@@ -148,5 +151,81 @@ public class ObjectJsonResultDto
     [JsonPropertyName("totalJsonLength")] public int TotalJsonLength { get; set; }
     [JsonPropertyName("returnedJsonLength")] public int ReturnedJsonLength { get; set; }
     [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class ObjectPropertyValueDto
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("arrayIndex")] public int ArrayIndex { get; set; }
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("totalJsonLength")] public int TotalJsonLength { get; set; }
+    [JsonPropertyName("returnedJsonLength")] public int ReturnedJsonLength { get; set; }
+    [JsonPropertyName("previewJsonLength")] public int? PreviewJsonLength { get; set; }
+    [JsonPropertyName("totalItems")] public int? TotalItems { get; set; }
+    [JsonPropertyName("returnedItems")] public int? ReturnedItems { get; set; }
+    [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class ObjectPreviewResultDto
+{
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("propertyCount")] public int PropertyCount { get; set; }
+    [JsonPropertyName("returnedProperties")] public int ReturnedProperties { get; set; }
+    [JsonPropertyName("propertiesTruncated")] public bool PropertiesTruncated { get; set; }
+    [JsonPropertyName("properties")] public List<ObjectPropertyValueDto> Properties { get; set; } = [];
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class ObjectPropertiesResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("requestedProperties")] public int RequestedProperties { get; set; }
+    [JsonPropertyName("returnedProperties")] public int ReturnedProperties { get; set; }
+    [JsonPropertyName("missingProperties")] public List<string> MissingProperties { get; set; } = [];
+    [JsonPropertyName("properties")] public List<ObjectPropertyValueDto> Properties { get; set; } = [];
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class ObjectReferenceDto
+{
+    [JsonPropertyName("path")] public string Path { get; set; } = "";
+    [JsonPropertyName("source")] public string Source { get; set; } = "";
+}
+
+public class ObjectReferencesResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("references")] public List<ObjectReferenceDto> References { get; set; } = [];
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class FindReferencesMatchDto
+{
+    [JsonPropertyName("packagePath")] public string PackagePath { get; set; } = "";
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("references")] public List<string> References { get; set; } = [];
+}
+
+public class FindReferencesResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("targetPath")] public string TargetPath { get; set; } = "";
+    [JsonPropertyName("scannedPackages")] public int ScannedPackages { get; set; }
+    [JsonPropertyName("failedPackages")] public int FailedPackages { get; set; }
+    [JsonPropertyName("scanErrors")] public List<string> ScanErrors { get; set; } = [];
+    [JsonPropertyName("cancelled")] public bool Cancelled { get; set; }
+    [JsonPropertyName("totalMatches")] public int TotalMatches { get; set; }
+    [JsonPropertyName("matches")] public List<FindReferencesMatchDto> Matches { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
     [JsonPropertyName("error")] public string? Error { get; set; }
 }

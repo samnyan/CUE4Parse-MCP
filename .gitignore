@@ -1,6 +1,7 @@
 ## .NET
 bin/
 obj/
+publish/
 *.dll
 *.pdb
 *.exe

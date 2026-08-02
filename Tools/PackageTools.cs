@@ -4,9 +4,6 @@ using System.Text.Json.Nodes;
 using CUE4Parse.Mcp.Dtos;
 using CUE4Parse.Mcp.Services;
 using CUE4Parse.UE4.Assets.Exports;
-using CUE4Parse.UE4.Assets.Exports.Engine;
-using CUE4Parse.UE4.Assets.Exports.Internationalization;
-using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Objects.UObject;
 using ModelContextProtocol.Server;
 using NewtonsoftJsonConvert = Newtonsoft.Json.JsonConvert;
@@ -17,215 +14,81 @@ namespace CUE4Parse.Mcp.Tools;
 public static class PackageTools
 {
     private const int DefaultMaxDepth = 4;
-    private const int DefaultMaxJsonBytes = 256 * 1024; // 256 KB
+    private const int DefaultMaxJsonBytes = 256 * 1024;
 
     [McpServerTool(Name = "get_package_summary"), Description(
-        "Load a UE package and return its summary: export count, import count, export names, and package flags. " +
-        "Does not fully deserialize exports — use get_object_summary or get_object_json for detailed object data.")]
+        "Load a UE package and return bounded export summaries, import count, package flags, and version metadata. " +
+        "Use get_object_summary or get_object_json for detailed object data.")]
     public static string GetPackageSummary(
         Cue4ParseSessionRegistry sessions,
-        [Description("Package path (e.g. 'GameName/Content/Path/To/Asset.uasset' or '/Game/Path/To/Asset').")]
-        string packagePath,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+        [Description("Package path, such as 'GameName/Content/Path/Asset.uasset' or '/Game/Path/Asset'.")] string packagePath,
+        [Description("Maximum export summaries. Default: 100, max: 500.")] int? exportLimit = null,
+        [Description("Session ID from init_provider. If omitted, the most recent session.")] string? sessionId = null)
     {
-        var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
+        if (!TryGetPackage(sessions, packagePath, sessionId, out var package, out var error)) return error!;
+        var maxExports = Math.Clamp(exportLimit ?? 100, 1, 500);
+        var exports = new List<ExportSummaryDto>();
+        for (var i = 0; i < Math.Min(package!.ExportsLazy.Length, maxExports); i++)
+            exports.Add(ReadExport(package, i));
 
-        string fixedPath;
-        try
-        {
-            fixedPath = session.Provider.FixPath(packagePath);
-        }
-        catch
-        {
-            fixedPath = packagePath;
-        }
-
-        if (!session.Provider.TryLoadPackage(fixedPath, out var package))
-        {
-            if (!session.Provider.TryLoadPackage(packagePath, out package))
-                return Error("Package not found", $"Could not load package at '{packagePath}'. Use search_assets to find valid paths.");
-        }
-
-        var exportSummaries = new List<ExportSummaryDto>();
-        for (var i = 0; i < package.ExportsLazy.Length; i++)
-        {
-            try
-            {
-                var export = package.GetExport(i);
-                if (export != null)
-                {
-                    exportSummaries.Add(new ExportSummaryDto
-                    {
-                        Index = i,
-                        Name = export.Name,
-                        Type = export.ExportType,
-                        Path = export.GetPathName()
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                exportSummaries.Add(new ExportSummaryDto
-                {
-                    Index = i,
-                    Name = $"Export_{i}",
-                    Type = "Unknown",
-                    Error = ex.Message
-                });
-            }
-        }
-
-        var result = new
+        return JsonSerializer.Serialize(new
         {
             ok = true,
             packagePath = package.Name,
             exportCount = package.ExportMapLength,
+            returnedExports = exports.Count,
+            exportsTruncated = exports.Count < package.ExportMapLength,
             importCount = package.ImportMapLength,
             isFullyLoaded = package.IsFullyLoaded,
             packageFlags = package.Summary.PackageFlags.ToString(),
             isUnversioned = package.Summary.bUnversioned,
-            exports = exportSummaries
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+            exports
+        }, McpJsonOptions.Default);
     }
 
     [McpServerTool(Name = "get_exports"), Description(
-        "List all exports in a package with their names, types, and indices. " +
-        "Similar to get_package_summary but focused on the export list with pagination.")]
+        "List package exports with names, types, paths, and indices using bounded pagination.")]
     public static string GetExports(
         Cue4ParseSessionRegistry sessions,
-        [Description("Package path (e.g. 'GameName/Content/Path/To/Asset.uasset').")]
-        string packagePath,
-        [Description("Maximum number of exports to return. Default: 100.")]
-        int? limit = null,
-        [Description("Number of exports to skip. Default: 0.")]
-        int? cursor = null,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+        [Description("Package path, such as 'GameName/Content/Path/Asset.uasset'.")] string packagePath,
+        [Description("Maximum exports to return. Default: 100, max: 500.")] int? limit = null,
+        [Description("Number of exports to skip. Default: 0.")] int? cursor = null,
+        [Description("Session ID from init_provider. If omitted, the most recent session.")] string? sessionId = null)
     {
-        var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
-
-        string fixedPath;
-        try
-        {
-            fixedPath = session.Provider.FixPath(packagePath);
-        }
-        catch
-        {
-            fixedPath = packagePath;
-        }
-
-        if (!session.Provider.TryLoadPackage(fixedPath, out var package))
-        {
-            if (!session.Provider.TryLoadPackage(packagePath, out package))
-                return Error("Package not found", $"Could not load package at '{packagePath}'.");
-        }
-
+        if (!TryGetPackage(sessions, packagePath, sessionId, out var package, out var error)) return error!;
         var maxLimit = Math.Clamp(limit ?? 100, 1, 500);
         var skip = Math.Max(0, cursor ?? 0);
-        var totalExports = package.ExportsLazy.Length;
-
-        var exports = new List<ExportSummaryDto>();
-        for (var i = skip; i < Math.Min(skip + maxLimit, totalExports); i++)
-        {
-            try
-            {
-                var export = package.GetExport(i);
-                exports.Add(new ExportSummaryDto
-                {
-                    Index = i,
-                    Name = export?.Name ?? $"Export_{i}",
-                    Type = export?.ExportType ?? "Unknown",
-                    Path = export?.GetPathName() ?? ""
-                });
-            }
-            catch (Exception ex)
-            {
-                exports.Add(new ExportSummaryDto
-                {
-                    Index = i,
-                    Name = $"Export_{i}",
-                    Type = "Unknown",
-                    Error = ex.Message
-                });
-            }
-        }
-
-        var result = new
+        var total = package!.ExportsLazy.Length;
+        var exports = Enumerable.Range(skip, Math.Max(0, Math.Min(maxLimit, total - skip)))
+            .Select(index => ReadExport(package, index)).ToList();
+        return JsonSerializer.Serialize(new
         {
             ok = true,
             packagePath = package.Name,
-            exports = exports,
-            nextCursor = skip + maxLimit < totalExports ? skip + maxLimit : (int?)null,
-            totalExports
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+            exports,
+            nextCursor = skip + maxLimit < total ? skip + maxLimit : (int?)null,
+            totalExports = total
+        }, McpJsonOptions.Default);
     }
 
     [McpServerTool(Name = "get_object_summary"), Description(
-        "Load one or more UObjects and return their type, name, outer, class, and a summary of their properties. " +
-        "Accepts a single objectPath or multiple comma-separated paths for batch queries. " +
-        "Each objectPath should be the package path followed by '.' and the export name " +
-        "(e.g. 'GameName/Content/Path/Asset.uasset.ExportName').")]
+        "Load one or more UObjects and return metadata plus a bounded property summary. Supports comma-separated batch paths.")]
     public static string GetObjectSummary(
         Cue4ParseSessionRegistry sessions,
-        [Description("Full object path or comma-separated paths (e.g. 'GameName/Content/Path/Asset.uasset.MainObject' or 'path1,obj2,path3').")]
-        string objectPath,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+        [Description("Full object path or comma-separated object paths.")] string objectPath,
+        [Description("Maximum properties per object. Default: 50, max: 500.")] int? maxProperties = null,
+        [Description("Session ID from init_provider. If omitted, the most recent session.")] string? sessionId = null)
     {
         var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
-
-        var paths = objectPath.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (session == null) return Error("no_session", "No provider session found. Call init_provider first.");
+        var limit = Math.Clamp(maxProperties ?? 50, 1, 500);
         var results = new List<ObjectSummaryDto>();
-
-        foreach (var path in paths)
+        foreach (var path in SplitPaths(objectPath))
         {
             try
             {
                 var obj = session.Provider.SafeLoadPackageObject(path);
-                if (obj == null)
-                {
-                    results.Add(new ObjectSummaryDto
-                    {
-                        ObjectPath = path,
-                        Error = $"Could not load object at '{path}'."
-                    });
-                    continue;
-                }
-
-                var properties = new List<PropertySummaryDto>();
-                foreach (var prop in obj.Properties.Take(50))
-                {
-                    try
-                    {
-                        properties.Add(new PropertySummaryDto
-                        {
-                            Name = prop.Name.Text,
-                            Type = prop.PropertyType.Text,
-                            ArrayIndex = prop.ArrayIndex
-                        });
-                    }
-                    catch
-                    {
-                        properties.Add(new PropertySummaryDto
-                        {
-                            Name = prop.Name.Text,
-                            Type = "Unknown",
-                            ArrayIndex = prop.ArrayIndex
-                        });
-                    }
-                }
-
+                if (obj == null) { results.Add(new ObjectSummaryDto { ObjectPath = path, Error = $"Could not load object at '{path}'." }); continue; }
                 results.Add(new ObjectSummaryDto
                 {
                     ObjectPath = path,
@@ -237,393 +100,83 @@ public static class PackageTools
                     Class = obj.Class?.Name.Text,
                     Flags = obj.Flags.ToString(),
                     PropertyCount = obj.Properties.Count,
-                    Properties = properties
+                    Properties = obj.Properties.Take(limit).Select(p => new PropertySummaryDto { Name = p.Name.Text, Type = p.PropertyType.Text, ArrayIndex = p.ArrayIndex }).ToList()
                 });
             }
-            catch (Exception ex)
-            {
-                results.Add(new ObjectSummaryDto
-                {
-                    ObjectPath = path,
-                    Error = ex.Message
-                });
-            }
+            catch (Exception ex) { results.Add(new ObjectSummaryDto { ObjectPath = path, Error = ex.Message }); }
         }
-
-        var result = new
-        {
-            ok = true,
-            queried = paths.Length,
-            objects = results
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+        return JsonSerializer.Serialize(new { ok = true, queried = results.Count, objects = results }, McpJsonOptions.Default);
     }
 
     [McpServerTool(Name = "get_object_json"), Description(
-        "Serialize one or more UObjects to JSON with depth and size limits. " +
-        "Accepts a single objectPath or multiple comma-separated paths for batch queries. " +
-        "Returns the JSON representation of each object's properties as structured JSON (not escaped string). " +
-        "Each object's output is truncated if it exceeds maxBytes.")]
+        "Serialize one or more UObjects to JSON with depth and size limits. Oversized objects return truncated: true with null JSON, never partial invalid JSON.")]
     public static string GetObjectJson(
         Cue4ParseSessionRegistry sessions,
-        [Description("Full object path or comma-separated paths (e.g. 'path1.uasset.Obj1' or 'path1.Obj1,path2.Obj2').")]
-        string objectPath,
-        [Description("Maximum serialization depth. Default: 4.")]
-        int? maxDepth = null,
-        [Description("Maximum JSON output size in bytes per object. Default: 262144 (256 KB).")]
-        int? maxBytes = null,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+        [Description("Full object path or comma-separated object paths.")] string objectPath,
+        [Description("Maximum serialization depth. Default: 4.")] int? maxDepth = null,
+        [Description("Maximum JSON bytes per object. Default: 262144, max: 4194304.")] int? maxBytes = null,
+        [Description("Session ID from init_provider. If omitted, the most recent session.")] string? sessionId = null)
     {
         var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
-
-        var paths = objectPath.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (session == null) return Error("no_session", "No provider session found. Call init_provider first.");
         var depth = Math.Clamp(maxDepth ?? DefaultMaxDepth, 1, 20);
-        var maxOutputBytes = Math.Clamp(maxBytes ?? DefaultMaxJsonBytes, 1024, 4 * 1024 * 1024);
-
+        var outputLimit = Math.Clamp(maxBytes ?? DefaultMaxJsonBytes, 1024, 4 * 1024 * 1024);
         var results = new List<ObjectJsonResultDto>();
-
-        foreach (var path in paths)
+        foreach (var path in SplitPaths(objectPath))
         {
-            UObject? obj;
             try
             {
-                obj = session.Provider.SafeLoadPackageObject(path);
-            }
-            catch (Exception ex)
-            {
-                results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = ex.Message });
-                continue;
-            }
-
-            if (obj == null)
-            {
-                results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = $"Could not load object at '{path}'." });
-                continue;
-            }
-
-            string jsonStr;
-            try
-            {
-                var settings = new Newtonsoft.Json.JsonSerializerSettings
-                {
-                    Formatting = Newtonsoft.Json.Formatting.Indented,
-                    MaxDepth = depth,
-                    ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
-                    Error = (_, args) => args.ErrorContext.Handled = true
-                };
-
-                jsonStr = NewtonsoftJsonConvert.SerializeObject(obj, settings);
-            }
-            catch (Exception ex)
-            {
-                results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = $"Serialization failed: {ex.Message}" });
-                continue;
-            }
-
-            var totalLength = jsonStr.Length;
-
-            JsonNode? jsonNode;
-            try
-            {
-                jsonNode = JsonNode.Parse(jsonStr);
-            }
-            catch
-            {
-                // If Newtonsoft JSON can't be parsed by System.Text.Json, fall back to raw string
-                jsonNode = JsonValue.Create(jsonStr);
-            }
-
-            // If the full JSON is within limits, return it as structured JSON
-            if (totalLength <= maxOutputBytes)
-            {
+                var obj = session.Provider.SafeLoadPackageObject(path);
+                if (obj == null) { results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = $"Could not load object at '{path}'." }); continue; }
+                var json = NewtonsoftJsonConvert.SerializeObject(obj, CreateSettings(depth));
+                var parsed = JsonNode.Parse(json);
                 results.Add(new ObjectJsonResultDto
                 {
                     ObjectPath = path,
                     Name = obj.Name,
                     Type = obj.ExportType,
-                    Truncated = false,
-                    TotalJsonLength = totalLength,
-                    ReturnedJsonLength = totalLength,
-                    Json = jsonNode
-                });
-                continue;
-            }
-
-            // For truncated output: serialize the JsonNode and truncate the result
-            var serialized = System.Text.Json.JsonSerializer.Serialize(jsonNode, McpJsonOptions.Default);
-            if (serialized.Length <= maxOutputBytes)
-            {
-                results.Add(new ObjectJsonResultDto
-                {
-                    ObjectPath = path,
-                    Name = obj.Name,
-                    Type = obj.ExportType,
-                    Truncated = false,
-                    TotalJsonLength = totalLength,
-                    ReturnedJsonLength = serialized.Length,
-                    Json = jsonNode
+                    Truncated = json.Length > outputLimit,
+                    TotalJsonLength = json.Length,
+                    ReturnedJsonLength = json.Length > outputLimit ? 0 : json.Length,
+                    Json = json.Length > outputLimit ? null : parsed
                 });
             }
-            else
-            {
-                // Truncate the serialized string at a safe boundary
-                var cutPoint = maxOutputBytes;
-                var lastNewline = serialized.LastIndexOf('\n', maxOutputBytes);
-                if (lastNewline > maxOutputBytes / 2)
-                    cutPoint = lastNewline;
-
-                results.Add(new ObjectJsonResultDto
-                {
-                    ObjectPath = path,
-                    Name = obj.Name,
-                    Type = obj.ExportType,
-                    Truncated = true,
-                    TotalJsonLength = totalLength,
-                    ReturnedJsonLength = cutPoint,
-                    Json = JsonValue.Create(serialized[..cutPoint] + "\n... [truncated]")
-                });
-            }
+            catch (Exception ex) { results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = ex.Message }); }
         }
-
-        var result = new
-        {
-            ok = true,
-            queried = paths.Length,
-            objects = results
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+        return JsonSerializer.Serialize(new { ok = true, queried = results.Count, objects = results }, McpJsonOptions.Default);
     }
 
-    [McpServerTool(Name = "get_data_table_rows"), Description(
-        "Query rows from a UE DataTable asset with optional row name filtering, field filtering, and pagination. " +
-        "Returns each row's property names/types and optionally their JSON values. " +
-        "Much more efficient than get_object_json for DataTables with many rows.")]
-    public static string GetDataTableRows(
-        Cue4ParseSessionRegistry sessions,
-        [Description("Object path to the DataTable (e.g. '/Game/Path/DT_Items.DT_Items').")]
-        string objectPath,
-        [Description("Comma-separated row names to filter (e.g. 'i_passive_maxhpup_LV1,i_passive_maxhpup_LV2'). If omitted, returns all rows.")]
-        string? rowNames = null,
-        [Description("Comma-separated property names to include (e.g. 'SlotCount,bAvailableInGame'). If omitted, returns all properties.")]
-        string? fields = null,
-        [Description("Include full JSON value for each row. Default: true. Set to false for a lightweight row list.")]
-        bool includeJson = true,
-        [Description("Maximum number of rows to return. Default: 100.")]
-        int? limit = null,
-        [Description("Number of rows to skip. Default: 0.")]
-        int? cursor = null,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+    private static ExportSummaryDto ReadExport(CUE4Parse.UE4.Assets.IPackage package, int index)
     {
-        var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
-
-        UObject? obj;
         try
         {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
+            var export = package.GetExport(index);
+            return new ExportSummaryDto { Index = index, Name = export?.Name ?? $"Export_{index}", Type = export?.ExportType ?? "Unknown", Path = export?.GetPathName() ?? "" };
         }
-        catch (Exception ex)
-        {
-            return Error("Load failed", ex.Message);
-        }
-
-        if (obj is not UDataTable dataTable)
-        {
-            return Error("Not a DataTable", $"Object at '{objectPath}' is of type '{obj?.ExportType ?? "null"}', not a DataTable.");
-        }
-
-        var rowMap = dataTable.RowMap;
-        var totalRows = rowMap.Count;
-
-        // Parse field filter
-        HashSet<string>? fieldFilter = null;
-        if (!string.IsNullOrWhiteSpace(fields))
-        {
-            fieldFilter = fields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(f => f.Trim())
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-
-        // Parse row name filter
-        HashSet<string>? rowFilter = null;
-        if (!string.IsNullOrWhiteSpace(rowNames))
-        {
-            rowFilter = rowNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(r => r.Trim())
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-
-        // Filter and paginate rows
-        var filteredRows = rowMap
-            .Where(kvp => rowFilter == null || rowFilter.Contains(kvp.Key.Text))
-            .ToList();
-
-        var maxLimit = Math.Clamp(limit ?? 100, 1, 1000);
-        var skip = Math.Max(0, cursor ?? 0);
-        var pagedRows = filteredRows.Skip(skip).Take(maxLimit).ToList();
-
-        var rows = new List<DataTableRowDto>();
-        foreach (var kvp in pagedRows)
-        {
-            var rowDto = new DataTableRowDto { RowName = kvp.Key.Text };
-
-            try
-            {
-                var props = kvp.Value.Properties;
-                var filteredProps = fieldFilter != null
-                    ? props.Where(p => fieldFilter.Contains(p.Name.Text)).ToList()
-                    : props;
-
-                rowDto.Properties = filteredProps.Select(p => new PropertySummaryDto
-                {
-                    Name = p.Name.Text,
-                    Type = p.PropertyType.Text,
-                    ArrayIndex = p.ArrayIndex
-                }).ToList();
-
-                if (includeJson)
-                {
-                    var settings = new Newtonsoft.Json.JsonSerializerSettings
-                    {
-                        Formatting = Newtonsoft.Json.Formatting.Indented,
-                        MaxDepth = DefaultMaxDepth,
-                        ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
-                        Error = (_, args) => args.ErrorContext.Handled = true
-                    };
-
-                    if (fieldFilter != null)
-                    {
- // Serialize only filtered properties
-                        var filteredDict = filteredProps.Select(p => new { name = p.Name.Text, value = p.Tag?.GetValue<object>() }).ToList();
-                        var jsonStr = NewtonsoftJsonConvert.SerializeObject(filteredDict, settings);
-                        rowDto.Json = JsonNode.Parse(jsonStr) ?? JsonValue.Create(jsonStr);
-                    }
-                    else
-                    {
-                        var jsonStr = NewtonsoftJsonConvert.SerializeObject(kvp.Value, settings);
-                        // Truncate if too large
-                        if (jsonStr.Length > DefaultMaxJsonBytes)
-                        {
-                            jsonStr = jsonStr[..(DefaultMaxJsonBytes / 2)] + "\n  // ... [truncated]";
-                            try { rowDto.Json = JsonNode.Parse(jsonStr); }
-                            catch { rowDto.Json = JsonValue.Create(jsonStr); }
-                        }
-                        else
-                        {
-                            rowDto.Json = JsonNode.Parse(jsonStr) ?? JsonValue.Create(jsonStr);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                rowDto.Error = ex.Message;
-            }
-
-            rows.Add(rowDto);
-        }
-
-        var result = new DataTableRowsResultDto
-        {
-            ObjectPath = objectPath,
-            RowStructName = dataTable.RowStructName,
-            TotalRows = totalRows,
-            ReturnedRows = rows.Count,
-            Rows = rows,
-            NextCursor = skip + maxLimit < filteredRows.Count ? skip + maxLimit : null
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+        catch (Exception ex) { return new ExportSummaryDto { Index = index, Name = $"Export_{index}", Type = "Unknown", Error = ex.Message }; }
     }
 
-    [McpServerTool(Name = "get_string_table_entries"), Description(
-        "Query entries from a UE StringTable asset with optional key prefix filtering and pagination. " +
-        "Returns key-value pairs from the string table. Much more efficient than get_object_json for StringTables.")]
-    public static string GetStringTableEntries(
-        Cue4ParseSessionRegistry sessions,
-        [Description("Object path to the StringTable (e.g. '/Game/Path/ST_Passives.ST_Passives').")]
-        string objectPath,
-        [Description("Filter keys by prefix (e.g. 'PASSIVE_MAXHP'). Case-insensitive.")]
-        string? keyPrefix = null,
-        [Description("Comma-separated exact key names to match. If omitted, returns all matching entries.")]
-        string? keys = null,
-        [Description("Maximum number of entries to return. Default: 200.")]
-        int? limit = null,
-        [Description("Number of entries to skip. Default: 0.")]
-        int? cursor = null,
-        [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
-        string? sessionId = null)
+    private static bool TryGetPackage(Cue4ParseSessionRegistry sessions, string packagePath, string? sessionId, out CUE4Parse.UE4.Assets.IPackage? package, out string? error)
     {
+        package = null;
         var session = sessions.GetSession(sessionId);
-        if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
-
-        UObject? obj;
-        try
-        {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
-        }
-        catch (Exception ex)
-        {
-            return Error("Load failed", ex.Message);
-        }
-
-        if (obj is not UStringTable stringTable)
-        {
-            return Error("Not a StringTable", $"Object at '{objectPath}' is of type '{obj?.ExportType ?? "null"}', not a StringTable.");
-        }
-
-        var entries = stringTable.StringTable.KeysToEntries;
-        var totalEntries = entries.Count;
-
-        // Parse exact key filter
-        HashSet<string>? exactKeys = null;
-        if (!string.IsNullOrWhiteSpace(keys))
-        {
-            exactKeys = keys.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-
-        // Filter entries
-        var filtered = entries.AsEnumerable();
-        if (exactKeys != null)
-        {
-            filtered = filtered.Where(kvp => exactKeys.Contains(kvp.Key));
-        }
-        else if (!string.IsNullOrWhiteSpace(keyPrefix))
-        {
-            filtered = filtered.Where(kvp => kvp.Key.StartsWith(keyPrefix, StringComparison.OrdinalIgnoreCase));
-        }
-
-        var filteredList = filtered.ToList();
-        var maxLimit = Math.Clamp(limit ?? 200, 1, 2000);
-        var skip = Math.Max(0, cursor ?? 0);
-        var paged = filteredList.Skip(skip).Take(maxLimit).ToList();
-
-        var result = new StringTableResultDto
-        {
-            ObjectPath = objectPath,
-            TableNamespace = stringTable.StringTable.TableNamespace,
-            TotalEntries = totalEntries,
-            ReturnedEntries = paged.Count,
-            Entries = paged.Select(kvp => new StringTableEntryDto
-            {
-                Key = kvp.Key,
-                Value = kvp.Value
-            }).ToList(),
-            NextCursor = skip + maxLimit < filteredList.Count ? skip + maxLimit : null
-        };
-
-        return System.Text.Json.JsonSerializer.Serialize(result, McpJsonOptions.Default);
+        if (session == null) { error = Error("no_session", "No provider session found. Call init_provider first."); return false; }
+        var fixedPath = packagePath;
+        try { fixedPath = session.Provider.FixPath(packagePath); } catch { }
+        if (session.Provider.TryLoadPackage(fixedPath, out package) || session.Provider.TryLoadPackage(packagePath, out package)) { error = null; return true; }
+        error = Error("package_not_found", $"Could not load package at '{packagePath}'. Use search_assets to find valid paths.");
+        return false;
     }
 
-    private static string Error(string code, string message) =>
-        System.Text.Json.JsonSerializer.Serialize(new { ok = false, errorCode = code, message }, McpJsonOptions.Default);
+    private static List<string> SplitPaths(string value) => value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    private static Newtonsoft.Json.JsonSerializerSettings CreateSettings(int depth) => new()
+    {
+        Formatting = Newtonsoft.Json.Formatting.Indented,
+        MaxDepth = depth,
+        ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore,
+        Error = (_, args) => args.ErrorContext.Handled = true
+    };
+
+    private static string Error(string code, string message) => JsonSerializer.Serialize(new { ok = false, errorCode = code, message }, McpJsonOptions.Default);
 }

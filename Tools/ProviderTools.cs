@@ -44,10 +44,10 @@ public static class ProviderTools
         bool? skipReferencedTextures = null)
     {
         if (!Directory.Exists(root))
-            return Error("Directory not found", $"The directory '{root}' does not exist.");
+            return Error("directory_not_found", $"The directory '{root}' does not exist.");
 
         if (!Enum.TryParse<EGame>(gameVersion, out var eGame))
-            return Error("Unsupported game version", $"'{gameVersion}' is not a valid EGame enum value. Examples: GAME_UE5_3, GAME_UE4_27, GAME_FortniteGame.");
+            return Error("unsupported_game_version", $"'{gameVersion}' is not a valid EGame enum value. Examples: GAME_UE5_3, GAME_UE4_27, GAME_FortniteGame.");
 
         var searchOpt = searchOption?.Equals("AllDirectories", StringComparison.OrdinalIgnoreCase) == true
             ? SearchOption.AllDirectories
@@ -78,7 +78,7 @@ public static class ProviderTools
         }
         catch (Exception ex)
         {
-            return Error("Initialization failed", ex.Message);
+            return Error("initialization_failed", ex.Message);
         }
 
         // Try to mount unencrypted archives
@@ -142,10 +142,10 @@ public static class ProviderTools
     {
         var session = sessions.GetSession(sessionId);
         if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
+            return Error("no_session", "No provider session found. Call init_provider first.");
 
         if (!aesKey.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            return Error("Invalid key format", "AES key must start with '0x' followed by hex characters.");
+            return Error("invalid_key_format", "AES key must start with '0x' followed by hex characters.");
 
         FGuid fguid;
         if (string.IsNullOrEmpty(guid))
@@ -162,7 +162,7 @@ public static class ProviderTools
             }
             catch
             {
-                return Error("Invalid GUID", $"Could not parse '{guid}' as a GUID. Expected 32 hex characters.");
+                return Error("invalid_guid", $"Could not parse '{guid}' as a GUID. Expected 32 hex characters.");
             }
         }
 
@@ -173,7 +173,7 @@ public static class ProviderTools
         }
         catch (Exception ex)
         {
-            return Error("Invalid AES key", ex.Message);
+            return Error("invalid_aes_key", ex.Message);
         }
 
         int mountedCount;
@@ -183,7 +183,7 @@ public static class ProviderTools
         }
         catch (Exception ex)
         {
-            return Error("Submit key failed", ex.Message);
+            return Error("submit_key_failed", ex.Message);
         }
 
         var result = new
@@ -210,10 +210,10 @@ public static class ProviderTools
     {
         var session = sessions.GetSession(sessionId);
         if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
+            return Error("no_session", "No provider session found. Call init_provider first.");
 
         if (!File.Exists(mappingsFile))
-            return Error("File not found", $"Mappings file '{mappingsFile}' does not exist.");
+            return Error("file_not_found", $"Mappings file '{mappingsFile}' does not exist.");
 
         try
         {
@@ -221,7 +221,7 @@ public static class ProviderTools
         }
         catch (Exception ex)
         {
-            return Error("Failed to load mappings", ex.Message);
+            return Error("mappings_load_failed", ex.Message);
         }
 
         var result = new
@@ -245,7 +245,7 @@ public static class ProviderTools
     {
         var session = sessions.GetSession(sessionId);
         if (session == null)
-            return Error("No session", "No provider session found. Call init_provider first.");
+            return Error("no_session", "No provider session found. Call init_provider first.");
 
         var provider = session.Provider;
 
