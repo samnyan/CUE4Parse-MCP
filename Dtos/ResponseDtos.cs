@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace CUE4Parse.Mcp.Dtos;
@@ -98,4 +99,54 @@ public class SurveyProviderDto
     [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = [];
 
     [JsonPropertyName("topLevelDirectories")] public List<string> TopLevelDirectories { get; set; } = [];
+}
+
+public class DataTableRowDto
+{
+    [JsonPropertyName("rowName")] public string RowName { get; set; } = "";
+    [JsonPropertyName("properties")] public List<PropertySummaryDto> Properties { get; set; } = [];
+    [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class DataTableRowsResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("rowStructName")] public string? RowStructName { get; set; }
+    [JsonPropertyName("totalRows")] public int TotalRows { get; set; }
+    [JsonPropertyName("returnedRows")] public int ReturnedRows { get; set; }
+    [JsonPropertyName("rows")] public List<DataTableRowDto> Rows { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class StringTableEntryDto
+{
+    [JsonPropertyName("key")] public string Key { get; set; } = "";
+    [JsonPropertyName("value")] public string Value { get; set; } = "";
+}
+
+public class StringTableResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("tableNamespace")] public string TableNamespace { get; set; } = "";
+    [JsonPropertyName("totalEntries")] public int TotalEntries { get; set; }
+    [JsonPropertyName("returnedEntries")] public int ReturnedEntries { get; set; }
+    [JsonPropertyName("entries")] public List<StringTableEntryDto> Entries { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class ObjectJsonResultDto
+{
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("totalJsonLength")] public int TotalJsonLength { get; set; }
+    [JsonPropertyName("returnedJsonLength")] public int ReturnedJsonLength { get; set; }
+    [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
 }

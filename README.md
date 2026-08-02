@@ -16,7 +16,9 @@ Built as a .NET 10 stdio-based MCP server. All logs go to stderr; stdout is rese
 - **`get_package_summary`** — Load a UE package and return its summary (exports, imports, flags)
 - **`get_exports`** — List all exports in a package with pagination
 - **`get_object_summary`** — Load one or more UObjects (comma-separated batch) and return their type, name, and property list
-- **`get_object_json`** — Serialize one or more UObjects (comma-separated batch) to JSON with depth and size limits
+- **`get_object_json`** — Serialize one or more UObjects (comma-separated batch) to structured JSON with depth and size limits
+- **`get_data_table_rows`** — Query DataTable rows with row name filtering, field filtering, and pagination
+- **`get_string_table_entries`** — Query StringTable entries with key prefix filtering and pagination
 
 ## Prerequisites
 
@@ -71,6 +73,8 @@ Or use the built executable directly:
 4. **Browse** — Use `list_files` or `search_assets` to find asset paths
 5. **Inspect** — Use `get_package_summary` or `get_exports` to see what's in a package
 6. **Drill down** — Use `get_object_summary` or `get_object_json` for detailed object data (supports batch queries)
+7. **DataTable queries** — Use `get_data_table_rows` to filter specific rows and fields without loading the entire table
+8. **StringTable queries** — Use `get_string_table_entries` to filter by key prefix
 
 ### Example: init_provider
 
@@ -107,6 +111,10 @@ CUE4Parse-MCP/
 
 - All tool responses are JSON strings with `{ ok: true, ... }` or `{ ok: false, errorCode, message }` format
 - `get_object_summary` and `get_object_json` accept comma-separated paths for batch queries
+- `get_object_json` returns structured JSON (not escaped strings) for direct parsing
+- `get_data_table_rows` supports `rowNames`, `fields`, `includeJson`, and pagination for efficient DataTable queries
+- `get_string_table_entries` supports `keyPrefix`, `keys`, and pagination for efficient StringTable queries
 - JSON output from `get_object_json` is truncated at 256 KB per object by default (configurable)
+- Truncation reports `totalJsonLength` and `returnedJsonLength` for accurate status
 - Session IDs are 12-character hex strings; the most recent session is used if `sessionId` is omitted
 - CUE4Parse's Serilog output is redirected to stderr to avoid polluting the MCP protocol
