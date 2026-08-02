@@ -325,53 +325,6 @@ public static class PackageTools
             }
 
             var totalLength = jsonStr.Length;
-            var truncated = false;
-
-            if (jsonStr.Length > maxOutputBytes)
-            {
-                // Try to truncate at a valid JSON boundary
-                var cutPoint = maxOutputBytes;
-                // Find a safe cut point - look for a newline before the limit
-                var lastNewline = jsonStr.LastIndexOf('\n', maxOutputBytes);
-                if (lastNewline > maxOutputBytes / 2)
-                    cutPoint = lastNewline;
-
-                // Try to parse the truncated JSON; if it fails, return a text snippet
-                try
-                {
-                    var truncatedJson = jsonStr[..cutPoint] + "\n  // ... [truncated]";
-                    // Attempt to close the JSON by finding the opening brace and closing it
-                    // This is a best-effort approach; if parsing fails we fall back to raw text
-                    var node = JsonNode.Parse(truncatedJson);
-                    results.Add(new ObjectJsonResultDto
-                    {
-                        ObjectPath = path,
-                        Name = obj.Name,
-                        Type = obj.ExportType,
-                        Truncated = true,
-                        TotalJsonLength = totalLength,
-                        ReturnedJsonLength = cutPoint,
-                        Json = node
-                    });
-                    continue;
-                }
-                catch
-                {
-                    // Can't parse truncated JSON, return as text in a simple wrapper
-                    truncated = true;
-                    results.Add(new ObjectJsonResultDto
-                    {
-                        ObjectPath = path,
-                        Name = obj.Name,
-                        Type = obj.ExportType,
-                        Truncated = true,
-                        TotalJsonLength = totalLength,
-                        ReturnedJsonLength = cutPoint,
-                        Json = JsonValue.Create(jsonStr[..cutPoint] + "\n... [truncated]")
-                    });
-                    continue;
-                }
-            }
 
             JsonNode? jsonNode;
             try
@@ -384,16 +337,56 @@ public static class PackageTools
                 jsonNode = JsonValue.Create(jsonStr);
             }
 
-            results.Add(new ObjectJsonResultDto
+            // If the full JSON is within limits, return it as structured JSON
+            if (totalLength <= maxOutputBytes)
             {
-                ObjectPath = path,
-                Name = obj.Name,
-                Type = obj.ExportType,
-                Truncated = truncated,
-                TotalJsonLength = totalLength,
-                ReturnedJsonLength = jsonStr.Length,
-                Json = jsonNode
-            });
+                results.Add(new ObjectJsonResultDto
+                {
+                    ObjectPath = path,
+                    Name = obj.Name,
+                    Type = obj.ExportType,
+                    Truncated = false,
+                    TotalJsonLength = totalLength,
+                    ReturnedJsonLength = totalLength,
+                    Json = jsonNode
+                });
+                continue;
+            }
+
+            // For truncated output: serialize the JsonNode and truncate the result
+            var serialized = System.Text.Json.JsonSerializer.Serialize(jsonNode, McpJsonOptions.Default);
+            if (serialized.Length <= maxOutputBytes)
+            {
+                results.Add(new ObjectJsonResultDto
+                {
+                    ObjectPath = path,
+                    Name = obj.Name,
+                    Type = obj.ExportType,
+                    Truncated = false,
+                    TotalJsonLength = totalLength,
+                    ReturnedJsonLength = serialized.Length,
+                    Json = jsonNode
+                });
+            }
+            else
+            {
+                // Truncate the serialized string at a safe boundary
+                var cutPoint = maxOutputBytes;
+                var lastNewline = serialized.LastIndexOf('\n', maxOutputBytes);
+                if (lastNewline > maxOutputBytes / 2)
+                    cutPoint = lastNewline;
+
+                results.Add(new ObjectJsonResultDto
+                {
+                    ObjectPath = path,
+                    Name = obj.Name,
+                    Type = obj.ExportType,
+                    Truncated = true,
+                    TotalJsonLength = totalLength,
+                    ReturnedJsonLength = cutPoint,
+                    Json = JsonValue.Create(serialized[..cutPoint] + "\n... [truncated]")
+                });
+            }
         }
 
         var result = new
