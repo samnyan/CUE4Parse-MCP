@@ -96,6 +96,8 @@ public class SurveyProviderDto
     [JsonPropertyName("unloadedArchives")] public List<VfsArchiveDto> UnloadedArchives { get; set; } = [];
 
     [JsonPropertyName("hasMappings")] public bool HasMappings { get; set; }
+    [JsonPropertyName("readScriptData")] public bool ReadScriptData { get; set; }
+    [JsonPropertyName("cachedPackageCount")] public int CachedPackageCount { get; set; }
     [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = [];
 
     [JsonPropertyName("topLevelDirectories")] public List<string> TopLevelDirectories { get; set; } = [];
@@ -228,4 +230,234 @@ public class FindReferencesResultDto
     [JsonPropertyName("matches")] public List<FindReferencesMatchDto> Matches { get; set; } = [];
     [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
     [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class PackageExportResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("packagePath")] public string PackagePath { get; set; } = "";
+    [JsonPropertyName("exportIndex")] public int ExportIndex { get; set; }
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("outer")] public string? Outer { get; set; }
+    [JsonPropertyName("class")] public string? Class { get; set; }
+    [JsonPropertyName("propertyCount")] public int PropertyCount { get; set; }
+    [JsonPropertyName("properties")] public List<PropertySummaryDto> Properties { get; set; } = [];
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("totalJsonBytes")] public int TotalJsonBytes { get; set; }
+    [JsonPropertyName("returnedJsonBytes")] public int ReturnedJsonBytes { get; set; }
+    [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class PropertyPathValueDto
+{
+    [JsonPropertyName("resolvedPath")] public string ResolvedPath { get; set; } = "";
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+    [JsonPropertyName("totalJsonBytes")] public int TotalJsonBytes { get; set; }
+    [JsonPropertyName("returnedJsonBytes")] public int ReturnedJsonBytes { get; set; }
+    [JsonPropertyName("json")] public JsonNode? Json { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class PropertyPathResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("exportIndex")] public int? ExportIndex { get; set; }
+    [JsonPropertyName("propertyPath")] public string PropertyPath { get; set; } = "";
+    [JsonPropertyName("totalValues")] public int TotalValues { get; set; }
+    [JsonPropertyName("values")] public List<PropertyPathValueDto> Values { get; set; } = [];
+}
+
+public class BehaviorTreeNodeDto
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("exportIndex")] public int? ExportIndex { get; set; }
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("parentId")] public string? ParentId { get; set; }
+    [JsonPropertyName("services")] public List<string> Services { get; set; } = [];
+    [JsonPropertyName("properties")] public Dictionary<string, JsonNode?> Properties { get; set; } = [];
+    [JsonPropertyName("truncatedProperties")] public List<string> TruncatedProperties { get; set; } = [];
+    [JsonPropertyName("nativePolicyUnknown")] public bool NativePolicyUnknown { get; set; }
+}
+
+public class BehaviorTreeDecoratorLogicDto
+{
+    [JsonPropertyName("operation")] public string Operation { get; set; } = "";
+    [JsonPropertyName("number")] public int? Number { get; set; }
+}
+
+public class BehaviorTreeEdgeDto
+{
+    [JsonPropertyName("parentId")] public string ParentId { get; set; } = "";
+    [JsonPropertyName("childId")] public string ChildId { get; set; } = "";
+    [JsonPropertyName("childIndex")] public int ChildIndex { get; set; }
+    [JsonPropertyName("childKind")] public string ChildKind { get; set; } = "";
+    [JsonPropertyName("decorators")] public List<string> Decorators { get; set; } = [];
+    [JsonPropertyName("decoratorLogic")] public List<BehaviorTreeDecoratorLogicDto> DecoratorLogic { get; set; } = [];
+}
+
+public class BehaviorTreeAnalysisResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("objectPath")] public string ObjectPath { get; set; } = "";
+    [JsonPropertyName("rootNodeId")] public string? RootNodeId { get; set; }
+    [JsonPropertyName("blackboardPath")] public string? BlackboardPath { get; set; }
+    [JsonPropertyName("rootDecorators")] public List<string> RootDecorators { get; set; } = [];
+    [JsonPropertyName("rootDecoratorLogic")] public List<BehaviorTreeDecoratorLogicDto> RootDecoratorLogic { get; set; } = [];
+    [JsonPropertyName("nodes")] public List<BehaviorTreeNodeDto> Nodes { get; set; } = [];
+    [JsonPropertyName("edges")] public List<BehaviorTreeEdgeDto> Edges { get; set; } = [];
+    [JsonPropertyName("totalNodes")] public int TotalNodes { get; set; }
+    [JsonPropertyName("totalEdges")] public int TotalEdges { get; set; }
+    [JsonPropertyName("unresolvedReferences")] public List<string> UnresolvedReferences { get; set; } = [];
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+    [JsonPropertyName("truncated")] public bool Truncated { get; set; }
+}
+
+public class BlueprintFunctionDto
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("objectPath")] public string? ObjectPath { get; set; }
+    [JsonPropertyName("exportIndex")] public int? ExportIndex { get; set; }
+    [JsonPropertyName("functionFlags")] public string FunctionFlags { get; set; } = "";
+    [JsonPropertyName("isNative")] public bool IsNative { get; set; }
+    [JsonPropertyName("isUberGraph")] public bool IsUberGraph { get; set; }
+    [JsonPropertyName("statementCount")] public int StatementCount { get; set; }
+    [JsonPropertyName("hasScriptBytecode")] public bool HasScriptBytecode { get; set; }
+    [JsonPropertyName("scriptComplete")] public bool ScriptComplete { get; set; }
+    [JsonPropertyName("eventGraphFunction")] public string? EventGraphFunction { get; set; }
+    [JsonPropertyName("eventGraphCallOffset")] public int EventGraphCallOffset { get; set; }
+    [JsonPropertyName("error")] public string? Error { get; set; }
+}
+
+public class BlueprintFunctionListResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("className")] public string ClassName { get; set; } = "";
+    [JsonPropertyName("readScriptData")] public bool ReadScriptData { get; set; }
+    [JsonPropertyName("totalFunctions")] public int TotalFunctions { get; set; }
+    [JsonPropertyName("functions")] public List<BlueprintFunctionDto> Functions { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+}
+
+public class KismetStatementDto
+{
+    [JsonPropertyName("ordinal")] public int Ordinal { get; set; }
+    [JsonPropertyName("statementIndex")] public int StatementIndex { get; set; }
+    [JsonPropertyName("token")] public string Token { get; set; } = "";
+    [JsonPropertyName("summary")] public string? Summary { get; set; }
+    [JsonPropertyName("targets")] public List<int> Targets { get; set; } = [];
+    [JsonPropertyName("calls")] public List<string> Calls { get; set; } = [];
+    [JsonPropertyName("variables")] public List<string> Variables { get; set; } = [];
+    [JsonPropertyName("expressionDepth")] public int ExpressionDepth { get; set; }
+    [JsonPropertyName("expressionCount")] public int ExpressionCount { get; set; }
+    [JsonPropertyName("expression")] public JsonNode? Expression { get; set; }
+    [JsonPropertyName("expressionTruncated")] public bool ExpressionTruncated { get; set; }
+}
+
+public class KismetDisassemblyResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("functionName")] public string FunctionName { get; set; } = "";
+    [JsonPropertyName("functionFlags")] public string FunctionFlags { get; set; } = "";
+    [JsonPropertyName("totalStatements")] public int TotalStatements { get; set; }
+    [JsonPropertyName("returnedStatements")] public int ReturnedStatements { get; set; }
+    [JsonPropertyName("statements")] public List<KismetStatementDto> Statements { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("scriptComplete")] public bool ScriptComplete { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+}
+
+public class KismetBasicBlockDto
+{
+    [JsonPropertyName("id")] public int Id { get; set; }
+    [JsonPropertyName("startIndex")] public int StartIndex { get; set; }
+    [JsonPropertyName("endIndex")] public int EndIndex { get; set; }
+    [JsonPropertyName("statementIndices")] public List<int> StatementIndices { get; set; } = [];
+    [JsonPropertyName("isEntry")] public bool IsEntry { get; set; }
+    [JsonPropertyName("isExit")] public bool IsExit { get; set; }
+}
+
+public class KismetControlFlowEdgeDto
+{
+    [JsonPropertyName("fromBlock")] public int FromBlock { get; set; }
+    [JsonPropertyName("toBlock")] public int? ToBlock { get; set; }
+    [JsonPropertyName("targetStatementIndex")] public int? TargetStatementIndex { get; set; }
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("condition")] public string? Condition { get; set; }
+    [JsonPropertyName("accuracy")] public string Accuracy { get; set; } = "exact";
+}
+
+public class KismetCfgResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("functionName")] public string FunctionName { get; set; } = "";
+    [JsonPropertyName("totalBlocks")] public int TotalBlocks { get; set; }
+    [JsonPropertyName("totalEdges")] public int TotalEdges { get; set; }
+    [JsonPropertyName("blocks")] public List<KismetBasicBlockDto> Blocks { get; set; } = [];
+    [JsonPropertyName("edges")] public List<KismetControlFlowEdgeDto> Edges { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+}
+
+public class KismetCallEdgeDto
+{
+    [JsonPropertyName("caller")] public string Caller { get; set; } = "";
+    [JsonPropertyName("callee")] public string Callee { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("statementIndex")] public int StatementIndex { get; set; }
+    [JsonPropertyName("resolvedObjectPath")] public string? ResolvedObjectPath { get; set; }
+    [JsonPropertyName("nativeBoundary")] public bool NativeBoundary { get; set; }
+    [JsonPropertyName("accuracy")] public string Accuracy { get; set; } = "exact";
+}
+
+public class KismetCallGraphResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("functionFilter")] public string? FunctionFilter { get; set; }
+    [JsonPropertyName("totalEdges")] public int TotalEdges { get; set; }
+    [JsonPropertyName("edges")] public List<KismetCallEdgeDto> Edges { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+}
+
+public class KismetDefUseDto
+{
+    [JsonPropertyName("variable")] public string Variable { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "";
+    [JsonPropertyName("definitions")] public List<int> Definitions { get; set; } = [];
+    [JsonPropertyName("uses")] public List<int> Uses { get; set; } = [];
+    [JsonPropertyName("accuracy")] public string Accuracy { get; set; } = "resolved";
+}
+
+public class KismetDefUseResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("functionName")] public string FunctionName { get; set; } = "";
+    [JsonPropertyName("experimental")] public bool Experimental => true;
+    [JsonPropertyName("totalVariables")] public int TotalVariables { get; set; }
+    [JsonPropertyName("variables")] public List<KismetDefUseDto> Variables { get; set; } = [];
+    [JsonPropertyName("nextCursor")] public int? NextCursor { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
+}
+
+public class BlueprintPseudoCodeResultDto
+{
+    [JsonPropertyName("ok")] public bool Ok => true;
+    [JsonPropertyName("classObjectPath")] public string ClassObjectPath { get; set; } = "";
+    [JsonPropertyName("partial")] public bool Partial { get; set; }
+    [JsonPropertyName("totalCharacters")] public int TotalCharacters { get; set; }
+    [JsonPropertyName("returnedCharacters")] public int ReturnedCharacters { get; set; }
+    [JsonPropertyName("code")] public string? Code { get; set; }
+    [JsonPropertyName("diagnostics")] public List<string> Diagnostics { get; set; } = [];
 }

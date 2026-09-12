@@ -38,7 +38,9 @@ public static class TableTools
         UObject? obj;
         try
         {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
+            if (!PackageObjectResolver.TryResolve(session, objectPath, null, null, null, out var target, out var resolveError))
+                return Error("object_not_found", resolveError!);
+            obj = target!.Object;
         }
         catch (Exception ex)
         {
@@ -135,7 +137,9 @@ public static class TableTools
         UObject? obj;
         try
         {
-            obj = session.Provider.SafeLoadPackageObject(objectPath);
+            if (!PackageObjectResolver.TryResolve(session, objectPath, null, null, null, out var target, out var resolveError))
+                return Error("object_not_found", resolveError!);
+            obj = target!.Object;
         }
         catch (Exception ex)
         {

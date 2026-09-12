@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using CUE4Parse.FileProvider;
+using CUE4Parse.UE4.Assets;
 using CUE4Parse.UE4.Versions;
 
 namespace CUE4Parse.Mcp.Services;
@@ -14,6 +15,11 @@ public sealed class Cue4ParseSession : IDisposable
     public bool IsInitialized { get; set; }
     public int EncryptedArchiveCount { get; set; }
     public List<string> Warnings { get; } = [];
+    public int CachedPackageCount => _packageCache.Count;
+
+    private const int MaxCachedPackages = 64;
+    private readonly ConcurrentDictionary<string, Lazy<IPackage?>> _packageCache;
+    private readonly ConcurrentQueue<string> _packageCacheOrder = new();
 
     public Cue4ParseSession(string sessionId, DefaultFileProvider provider, string rootDirectory, EGame gameVersion)
     {
@@ -22,9 +28,47 @@ public sealed class Cue4ParseSession : IDisposable
         RootDirectory = rootDirectory;
         GameVersion = gameVersion;
         CreatedAt = DateTimeOffset.UtcNow;
+        _packageCache = new ConcurrentDictionary<string, Lazy<IPackage?>>(provider.PathComparer);
     }
 
-    public void Dispose() => Provider.Dispose();
+    public bool TryLoadPackage(string path, out IPackage? package, out string normalizedPath)
+    {
+        normalizedPath = path;
+        try { normalizedPath = Provider.FixPath(path); } catch { }
+        var originalPath = path;
+        var added = false;
+        var lazy = _packageCache.GetOrAdd(normalizedPath, key =>
+        {
+            added = true;
+            return new Lazy<IPackage?>(() =>
+            {
+                if (Provider.TryLoadPackage(key, out var loaded)) return loaded;
+                return Provider.TryLoadPackage(originalPath, out loaded) ? loaded : null;
+            }, LazyThreadSafetyMode.ExecutionAndPublication);
+        });
+        if (added)
+        {
+            _packageCacheOrder.Enqueue(normalizedPath);
+            while (_packageCache.Count > MaxCachedPackages && _packageCacheOrder.TryDequeue(out var oldest))
+                _packageCache.TryRemove(oldest, out _);
+        }
+        package = lazy.Value;
+        if (package != null) return true;
+        _packageCache.TryRemove(normalizedPath, out _);
+        return false;
+    }
+
+    public void ClearPackageCache()
+    {
+        _packageCache.Clear();
+        while (_packageCacheOrder.TryDequeue(out _)) { }
+    }
+
+    public void Dispose()
+    {
+        ClearPackageCache();
+        Provider.Dispose();
+    }
 }
 
 public sealed class Cue4ParseSessionRegistry : IDisposable

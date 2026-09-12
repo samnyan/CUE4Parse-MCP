@@ -87,8 +87,12 @@ public static class PackageTools
         {
             try
             {
-                var obj = session.Provider.SafeLoadPackageObject(path);
-                if (obj == null) { results.Add(new ObjectSummaryDto { ObjectPath = path, Error = $"Could not load object at '{path}'." }); continue; }
+                if (!PackageObjectResolver.TryResolve(session, path, null, null, null, out var target, out var resolveError))
+                {
+                    results.Add(new ObjectSummaryDto { ObjectPath = path, Error = resolveError });
+                    continue;
+                }
+                var obj = target!.Object;
                 results.Add(new ObjectSummaryDto
                 {
                     ObjectPath = path,
@@ -126,8 +130,12 @@ public static class PackageTools
         {
             try
             {
-                var obj = session.Provider.SafeLoadPackageObject(path);
-                if (obj == null) { results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = $"Could not load object at '{path}'." }); continue; }
+                if (!PackageObjectResolver.TryResolve(session, path, null, null, null, out var target, out var resolveError))
+                {
+                    results.Add(new ObjectJsonResultDto { ObjectPath = path, Error = resolveError });
+                    continue;
+                }
+                var obj = target!.Object;
                 var json = NewtonsoftJsonConvert.SerializeObject(obj, CreateSettings(depth));
                 var parsed = JsonNode.Parse(json);
                 results.Add(new ObjectJsonResultDto
@@ -161,9 +169,7 @@ public static class PackageTools
         package = null;
         var session = sessions.GetSession(sessionId);
         if (session == null) { error = Error("no_session", "No provider session found. Call init_provider first."); return false; }
-        var fixedPath = packagePath;
-        try { fixedPath = session.Provider.FixPath(packagePath); } catch { }
-        if (session.Provider.TryLoadPackage(fixedPath, out package) || session.Provider.TryLoadPackage(packagePath, out package)) { error = null; return true; }
+        if (session.TryLoadPackage(packagePath, out package, out _)) { error = null; return true; }
         error = Error("package_not_found", $"Could not load package at '{packagePath}'. Use search_assets to find valid paths.");
         return false;
     }

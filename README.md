@@ -2,7 +2,7 @@
 
 A read-only MCP (Model Context Protocol) server for querying Unreal Engine assets using [CUE4Parse](https://github.com/FabianFG/CUE4Parse).
 
-Built as a .NET 10 stdio-based MCP server. All logs go to stderr; stdout is reserved for MCP JSON-RPC.
+Built as a .NET 10 stdio-based MCP server. Current package version is `0.2.0`. All logs go to stderr; stdout is reserved for MCP JSON-RPC.
 
 ## Features
 
@@ -23,6 +23,15 @@ Built as a .NET 10 stdio-based MCP server. All logs go to stderr; stdout is rese
 - **`find_references`** — Scan a bounded set of packages for objects referencing a target path
 - **`get_data_table_rows`** — Query DataTable rows with row name filtering, field filtering, and pagination
 - **`get_string_table_entries`** — Query StringTable entries with key prefix filtering and pagination
+- **`get_package_export`** — Load any package export by zero-based index, including nested BehaviorTree nodes and UFunctions
+- **`get_property_path`** — Resolve bounded dotted/indexed paths such as `Children[0].ChildTask`
+- **`analyze_behavior_tree`** — Reconstruct cooked runtime BehaviorTree topology, ordered children, edge decorators, services, and node parameters
+- **`list_blueprint_functions`** — Enumerate cooked Blueprint UFunctions and Kismet script status
+- **`get_kismet_disassembly`** — Return bounded structured Kismet statements, nested calls, variables, and jump targets
+- **`get_kismet_cfg`** — Build a Kismet control-flow graph with basic blocks and confidence-labelled edges
+- **`get_kismet_call_graph`** — Extract direct, virtual, delegate, native-boundary, and event-to-ubergraph calls
+- **`get_kismet_def_use`** — Return experimental approximate Kismet variable definition/use data
+- **`decompile_blueprint_pseudo`** — Expose CUE4Parse's best-effort pseudo-decompiler as a bounded presentation view
 
 ## Prerequisites
 
@@ -37,6 +46,12 @@ Run the documented build from the repository directory:
 ```bash
 cd CUE4Parse-MCP
 dotnet build -c Release
+```
+
+Run the logic-analysis unit tests from the repository directory:
+
+```powershell
+dotnet test .\Tests\CUE4Parse.Mcp.Tests.csproj -c Release
 ```
 
 The Release output is also the executable used by the MCP client. If that executable is currently running, stop the MCP server before rebuilding because Windows locks both `CUE4Parse.Mcp.exe` and its loaded `CUE4Parse.Mcp.dll`:
@@ -115,9 +130,13 @@ Do not use `bin\\Release\\net10.0` as a release package; use `dotnet publish` an
 4. **Browse** — Use `list_files` or `search_assets` to find asset paths; pass `regex: true` for regular expressions and `sortBy` (`path`, `name`, `extension`, or `size`) for deterministic ordering
 5. **Inspect** — Use `get_package_summary` or `get_exports` to see what's in a package
 6. **Drill down** — Use `get_object_summary`, `get_object_preview`, or `get_object_properties` before falling back to `get_object_json`
-7. **References** — Use `get_object_references` for one object or bounded `find_references` for reverse lookup
-8. **DataTable queries** — Use `get_data_table_rows` to filter specific rows and fields without loading the entire table
-9. **StringTable queries** — Use `get_string_table_entries` to filter by key prefix
+7. **Nested exports** — Use `get_package_export` when a `Package.Asset:Subobject` path cannot be loaded directly
+8. **Property paths** — Use `get_property_path` for precise traversal of nested arrays and structs
+9. **BehaviorTree analysis** — Use `analyze_behavior_tree` for the cooked runtime tree, ordered child edges, decorators, services, and parameters
+10. **Blueprint analysis** — Initialize with `readScriptData: true`, then use `list_blueprint_functions`, Kismet disassembly, CFG, call graph, and def-use tools
+11. **References** — Use `get_object_references` for one object or bounded `find_references` for reverse lookup
+12. **DataTable queries** — Use `get_data_table_rows` to filter specific rows and fields without loading the entire table
+13. **StringTable queries** — Use `get_string_table_entries` to filter by key prefix
 
 ### Example: init_provider
 
@@ -145,6 +164,58 @@ aesKey: "0x1234567890ABCDEF..."
 guid: "00000000000000000000000000000000"
 ```
 
+### Example: cooked logic analysis
+
+Initialize with script parsing enabled:
+
+```
+root: "D:\\Games\\MyGame\\Content\\Paks"
+gameVersion: "GAME_UE5_4"
+mappingsFile: "D:\\Games\\MyGame\\Binaries\\Win64\\MyGame.usmap"
+readScriptData: true
+```
+
+Inspect an otherwise unaddressable nested export:
+
+```
+get_package_export(
+  packagePath: "MyGame/Content/AI/BT_Enemy.uasset",
+  exportIndex: 3,
+  includeJson: true
+)
+```
+
+Analyze a cooked BehaviorTree:
+
+```
+analyze_behavior_tree(
+  objectPath: "/Game/AI/BT_Enemy.BT_Enemy",
+  includeNodeProperties: true
+)
+```
+
+Analyze compiled Blueprint logic:
+
+```
+list_blueprint_functions(
+  classObjectPath: "/Game/AI/BTTask_Custom.BTTask_Custom_C"
+)
+
+get_kismet_disassembly(
+  classObjectPath: "/Game/AI/BTTask_Custom.BTTask_Custom_C",
+  functionName: "ReceiveExecuteAI",
+  significantOnly: true
+)
+```
+
+## Cooked Logic Boundaries
+
+BehaviorTree runtime topology is retained in cooked packages because the game needs `RootNode`, ordered composite `Children`, edge decorators, decorator operations, and services at runtime. `analyze_behavior_tree` reconstructs that static runtime structure; custom native node selection policies and live Blackboard values remain outside the asset.
+
+Shipping Blueprint editor graphs, node GUIDs, pin GUIDs, macro boundaries, and layout are normally removed. The retained `UBlueprintGeneratedClass` and `UFunction.ScriptBytecode` support compiled semantic analysis, not original graph reconstruction. Direct Kismet jumps are usually exact; virtual dispatch, delegates, computed jumps, latent continuations, aliasing, native side effects, and def-use results carry lower confidence or diagnostics. Native function bodies are in the executable or modules and are reported as native boundaries.
+
+For IoStore, `.utoc/.ucas` and any required global container must be present. Encrypted containers require the correct AES key. Unversioned packages normally require a matching `.usmap`. Kismet tools require `readScriptData: true` at provider initialization.
+
 ## Architecture
 
 ```
@@ -153,13 +224,25 @@ CUE4Parse-MCP/
 ├── Program.cs                # MCP server setup with stdio transport
 ├── McpJsonOptions.cs         # Shared JSON serialization options
 ├── ResponseDtos.cs           # Explicit DTO classes for structured tool responses
-├── Cue4ParseSession.cs       # Session management (Cue4ParseSession + SessionRegistry)
-└── Tools/
-    ├── ProviderTools.cs      # init_provider, submit_key, set_mappings, survey_provider, list_sessions
-    ├── AssetTools.cs         # list_files, search_assets
-    ├── PackageTools.cs       # package summaries and export lists
-    ├── ObjectTools.cs        # object preview, properties, and references
-    └── TableTools.cs         # DataTable and StringTable queries
+├── Cue4ParseSession.cs       # Session management and bounded package cache
+├── Services/
+│   ├── PackageObjectResolver.cs
+│   ├── PropertyPathResolver.cs
+│   ├── BoundedJsonSerializer.cs
+│   ├── BehaviorTreeAnalyzer.cs
+│   └── KismetAnalyzer.cs
+├── Tools/
+│   ├── ProviderTools.cs      # init_provider, submit_key, set_mappings, survey_provider, list_sessions
+│   ├── AssetTools.cs         # list_files, search_assets
+│   ├── PackageTools.cs       # package summaries and export lists
+│   ├── ObjectTools.cs        # object preview, properties, and references
+│   ├── LogicObjectTools.cs   # package export and nested property-path access
+│   ├── BehaviorTreeTools.cs  # cooked runtime BehaviorTree topology
+│   ├── KismetTools.cs        # functions, disassembly, CFG, calls, def-use, pseudo-code
+│   └── TableTools.cs         # DataTable and StringTable queries
+└── Tests/
+    ├── CUE4Parse.Mcp.Tests.csproj
+    └── LogicAnalysisTests.cs
 ```
 
 ## Notes
@@ -173,6 +256,12 @@ CUE4Parse-MCP/
 - `get_object_json` returns structured JSON when not truncated; oversized objects return `truncated: true` with a safe null JSON payload
 - `get_data_table_rows` supports `rowNames`, `fields`, `includeJson`, and pagination for efficient DataTable queries
 - `get_string_table_entries` supports `keyPrefix`, `keys`, and pagination for efficient StringTable queries
+- `get_package_export` is the reliable nested-export entry point for cooked packages
+- `get_property_path` supports dotted paths and numeric/wildcard array selectors
+- `analyze_behavior_tree` returns static runtime topology; decorators are attached to parent-child edges
+- Kismet analysis requires `readScriptData: true` during `init_provider`
+- `get_kismet_def_use` is explicitly experimental and approximate
+- All logic-analysis tools are read-only and do not write game assets
 - JSON output from `get_object_json` is limited to 256 KB per object by default (configurable)
 - Oversized object and row values are marked with `truncated: true`; no invalid partial JSON is returned
 - Truncation reports `totalJsonLength` and `returnedJsonLength` for accurate status

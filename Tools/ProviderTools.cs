@@ -218,6 +218,7 @@ public static class ProviderTools
         try
         {
             session.Provider.MappingsContainer = new FileUsmapTypeMappingsProvider(mappingsFile, session.Provider.PathComparer);
+            session.ClearPackageCache();
         }
         catch (Exception ex)
         {
@@ -308,6 +309,8 @@ public static class ProviderTools
             MountedArchives = mountedArchives,
             UnloadedArchives = unloadedArchives,
             HasMappings = provider.MappingsContainer?.MappingsForGame != null,
+            ReadScriptData = provider.ReadScriptData,
+            CachedPackageCount = session.CachedPackageCount,
             Warnings = session.Warnings,
             TopLevelDirectories = topDirs
         };

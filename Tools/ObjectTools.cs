@@ -48,12 +48,12 @@ public static class ObjectTools
         {
             try
             {
-                var obj = session.Provider.SafeLoadPackageObject(path);
-                if (obj == null)
+                if (!PackageObjectResolver.TryResolve(session, path, null, null, null, out var target, out var resolveError))
                 {
-                    results.Add(new ObjectPreviewResultDto { ObjectPath = path, Error = $"Could not load object at '{path}'." });
+                    results.Add(new ObjectPreviewResultDto { ObjectPath = path, Error = resolveError });
                     continue;
                 }
+                var obj = target!.Object;
 
                 var properties = obj.Properties.Take(propertyLimit)
                     .Select(property => SerializeProperty(property, bytesLimit, depth, sampleLimit))
@@ -97,8 +97,9 @@ public static class ObjectTools
 
         try
         {
-            var obj = session.Provider.SafeLoadPackageObject(objectPath);
-            if (obj == null) return Error("object_not_found", $"Could not load object at '{objectPath}'.");
+            if (!PackageObjectResolver.TryResolve(session, objectPath, null, null, null, out var target, out var resolveError))
+                return Error("object_not_found", resolveError!);
+            var obj = target!.Object;
             var requested = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
             var matchedProperties = obj.Properties
                 .Where(property => requested.Contains(property.Name.Text))
@@ -141,10 +142,11 @@ public static class ObjectTools
         if (session == null) return Error("no_session", "No provider session found. Call init_provider first.");
         try
         {
-            var obj = session.Provider.SafeLoadPackageObject(objectPath);
-            if (obj == null) return Error("object_not_found", $"Could not load object at '{objectPath}'.");
+            if (!PackageObjectResolver.TryResolve(session, objectPath, null, null, null, out var target, out var resolveError))
+                return Error("object_not_found", resolveError!);
+            var obj = target!.Object;
             var referenceLimit = Math.Clamp(limit ?? DefaultMaxReferences, 1, 1000);
-            var collected = CollectReferences(obj, referenceLimit);
+            var collected = CollectReferences(obj, referenceLimit, 12);
             return JsonSerializer.Serialize(new ObjectReferencesResultDto
             {
                 ObjectPath = objectPath,
@@ -204,13 +206,13 @@ public static class ObjectTools
             try
             {
                 scannedPackages++;
-                if (!session.Provider.TryLoadPackage(entry.Key, out var package))
+                if (!session.TryLoadPackage(entry.Key, out var package, out _))
                 {
                     failedPackages++;
                     scanErrors.Add($"{entry.Key}: package_load_failed");
                     continue;
                 }
-                for (var i = 0; i < Math.Min(package.ExportsLazy.Length, exportLimit); i++)
+                for (var i = 0; i < Math.Min(package!.ExportsLazy.Length, exportLimit); i++)
                 {
                     if (cancellationToken.IsCancellationRequested || stopwatch.Elapsed >= timeout)
                     {
@@ -221,7 +223,7 @@ public static class ObjectTools
                     if (obj == null) continue;
                     if (IsTargetMatch(entry.Key, targetPath) || IsTargetMatch(obj.GetPathName(), targetPath))
                         continue;
-                    var references = CollectReferences(obj, 1000).References
+                    var references = CollectReferences(obj, 1000, 12).References
                         .Where(reference => IsTargetMatch(reference.Path, targetPath))
                         .Select(reference => reference.Path)
                         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -355,7 +357,7 @@ public static class ObjectTools
         Error = (_, args) => args.ErrorContext.Handled = true
     };
 
-    private static (List<ObjectReferenceDto> References, bool HasMore) CollectReferences(UObject obj, int limit)
+    private static (List<ObjectReferenceDto> References, bool HasMore) CollectReferences(UObject obj, int limit, int maxDepth)
     {
         var references = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         AddReference(references, obj.Outer?.GetPathName(), "outer");
@@ -367,7 +369,7 @@ public static class ObjectTools
         {
             foreach (var property in obj.Properties)
             {
-                WalkValue(property.Tag?.GetValue<object>(), package, references, limit + 1, 0, new HashSet<object>(ReferenceEqualityComparer.Instance));
+                WalkValue(property.Tag?.GetValue<object>(), package, references, limit + 1, 0, maxDepth, new HashSet<object>(ReferenceEqualityComparer.Instance));
                 if (references.Count > limit) break;
             }
         }
@@ -375,9 +377,9 @@ public static class ObjectTools
         return (results, references.Count > limit);
     }
 
-    private static void WalkValue(object? value, IPackage package, Dictionary<string, string> references, int limit, int depth, HashSet<object> visited)
+    private static void WalkValue(object? value, IPackage package, Dictionary<string, string> references, int limit, int depth, int maxDepth, HashSet<object> visited)
     {
-        if (value == null || references.Count >= limit || depth > 4) return;
+        if (value == null || references.Count >= limit || depth > maxDepth) return;
         if (value is string || value.GetType().IsPrimitive || value is decimal) return;
         if (!value.GetType().IsValueType && !visited.Add(value)) return;
 
@@ -405,7 +407,7 @@ public static class ObjectTools
         {
             foreach (var item in enumerable)
             {
-                WalkValue(item, package, references, limit, depth + 1, visited);
+                WalkValue(item, package, references, limit, depth + 1, maxDepth, visited);
                 if (references.Count >= limit) break;
             }
             return;
@@ -419,7 +421,7 @@ public static class ObjectTools
                 PropertyInfo property when property.CanRead && property.GetIndexParameters().Length == 0 => property.GetValue(value),
                 _ => null
             };
-            WalkValue(child, package, references, limit, depth + 1, visited);
+            WalkValue(child, package, references, limit, depth + 1, maxDepth, visited);
             if (references.Count >= limit) break;
         }
     }
