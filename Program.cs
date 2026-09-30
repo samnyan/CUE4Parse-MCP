@@ -56,6 +56,7 @@ static async Task RunStdioAsync(PathAccessPolicy pathAccessPolicy)
     var builder = Host.CreateApplicationBuilder([]);
 
     // stdout is reserved for MCP JSON-RPC in stdio mode.
+    builder.Logging.ClearProviders();
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
     AddCommonServices(builder.Services, pathAccessPolicy);
@@ -72,6 +73,7 @@ static async Task RunHttpAsync(ServerOptions options, PathAccessPolicy pathAcces
     var builder = WebApplication.CreateBuilder([]);
 
     // Keep logs on stderr for consistent behavior across transports.
+    builder.Logging.ClearProviders();
     builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
     AddCommonServices(builder.Services, pathAccessPolicy);
@@ -82,9 +84,14 @@ static async Task RunHttpAsync(ServerOptions options, PathAccessPolicy pathAcces
 
     var app = builder.Build();
     app.MapMcp("/mcp");
-    app.Urls.Add($"http://{options.Host}:{options.Port}");
 
-    Console.Error.WriteLine($"CUE4Parse MCP Streamable HTTP: http://{options.Host}:{options.Port}/mcp");
+    var listenHost = options.Host.Contains(':') && !options.Host.StartsWith('[')
+        ? $"[{options.Host}]"
+        : options.Host;
+    var listenUrl = $"http://{listenHost}:{options.Port}";
+    app.Urls.Add(listenUrl);
+
+    Console.Error.WriteLine($"CUE4Parse MCP Streamable HTTP: {listenUrl}/mcp");
     if (pathAccessPolicy.IsRestricted)
     {
         Console.Error.WriteLine("Filesystem whitelist:");
