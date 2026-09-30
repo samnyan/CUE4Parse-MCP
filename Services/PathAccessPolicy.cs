@@ -54,6 +54,64 @@ public sealed class PathAccessPolicy
         out string errorMessage) =>
         TryValidateExistingPath(path, expectDirectory: false, out normalizedPath, out errorCode, out errorMessage);
 
+    public bool TryValidateDirectoryTree(
+        string path,
+        out string normalizedPath,
+        out string errorCode,
+        out string errorMessage)
+    {
+        if (!TryValidateDirectory(path, out normalizedPath, out errorCode, out errorMessage))
+            return false;
+
+        if (!IsRestricted)
+            return true;
+
+        try
+        {
+            var pending = new Stack<string>();
+            pending.Push(normalizedPath);
+
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                foreach (var entry in Directory.EnumerateFileSystemEntries(current))
+                {
+                    FileSystemInfo info = Directory.Exists(entry)
+                        ? new DirectoryInfo(entry)
+                        : new FileInfo(entry);
+
+                    if ((info.Attributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        var resolved = info.ResolveLinkTarget(returnFinalTarget: true);
+                        if (resolved != null && !_allowedRoots.Any(root => IsWithin(root.PhysicalPath, NormalizePath(resolved.FullName))))
+                        {
+                            errorCode = "path_not_allowed";
+                            errorMessage = $"Path '{entry}' resolves outside the configured whitelist.";
+                            return false;
+                        }
+
+                        // Do not traverse reparse points ourselves. CUE4Parse may choose to follow them,
+                        // but the resolved target was already checked above.
+                        continue;
+                    }
+
+                    if (info is DirectoryInfo)
+                        pending.Push(entry);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            errorCode = "path_resolution_failed";
+            errorMessage = $"Could not safely inspect directory tree: {ex.Message}";
+            return false;
+        }
+
+        errorCode = "";
+        errorMessage = "";
+        return true;
+    }
+
     public bool TryValidatePotentialFile(
         string path,
         out string normalizedPath,
