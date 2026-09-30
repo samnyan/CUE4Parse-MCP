@@ -24,6 +24,7 @@ public static class ProviderTools
         "If archives are encrypted, call submit_key after initialization.")]
     public static string InitProvider(
         Cue4ParseSessionRegistry sessions,
+        PathAccessPolicy pathAccessPolicy,
         [Description("Absolute path to the game's content/paks directory (e.g. D:\\Games\\MyGame\\Content\\Paks)")]
         string root,
         [Description("Game version enum name (e.g. GAME_UE5_3, GAME_UE4_27, GAME_FortniteGame, etc.). See EGame enum for all values.")]
@@ -43,13 +44,21 @@ public static class ProviderTools
         [Description("Whether to skip loading referenced textures in materials. Default: false.")]
         bool? skipReferencedTextures = null)
     {
-        if (!Directory.Exists(root))
-            return Error("directory_not_found", $"The directory '{root}' does not exist.");
+        var recursive = searchOption?.Equals("AllDirectories", StringComparison.OrdinalIgnoreCase) == true;
+        var rootAllowed = pathAccessPolicy.TryValidateDirectoryTree(
+            root,
+            recursive,
+            out var normalizedRoot,
+            out var rootErrorCode,
+            out var rootErrorMessage);
+
+        if (!rootAllowed)
+            return Error(rootErrorCode, rootErrorMessage);
 
         if (!Enum.TryParse<EGame>(gameVersion, out var eGame))
             return Error("unsupported_game_version", $"'{gameVersion}' is not a valid EGame enum value. Examples: GAME_UE5_3, GAME_UE4_27, GAME_FortniteGame.");
 
-        var searchOpt = searchOption?.Equals("AllDirectories", StringComparison.OrdinalIgnoreCase) == true
+        var searchOpt = recursive
             ? SearchOption.AllDirectories
             : SearchOption.TopDirectoryOnly;
 
@@ -58,16 +67,28 @@ public static class ProviderTools
             : StringComparer.Ordinal;
 
         var versions = new VersionContainer(eGame);
-        var provider = new DefaultFileProvider(root, searchOpt, versions, pathComparer);
+        var provider = new DefaultFileProvider(normalizedRoot, searchOpt, versions, pathComparer);
 
         if (readScriptData == true) provider.ReadScriptData = true;
         if (readShaderMaps == true) provider.ReadShaderMaps = true;
         if (readNaniteData == true) provider.ReadNaniteData = true;
         if (skipReferencedTextures == true) provider.SkipReferencedTextures = true;
 
-        if (!string.IsNullOrEmpty(mappingsFile) && File.Exists(mappingsFile))
+        string? normalizedMappingsFile = null;
+        if (!string.IsNullOrEmpty(mappingsFile))
         {
-            provider.MappingsContainer = new FileUsmapTypeMappingsProvider(mappingsFile, pathComparer);
+            if (!pathAccessPolicy.TryValidatePotentialFile(
+                    mappingsFile,
+                    out normalizedMappingsFile,
+                    out var mappingsErrorCode,
+                    out var mappingsErrorMessage))
+            {
+                provider.Dispose();
+                return Error(mappingsErrorCode, mappingsErrorMessage);
+            }
+
+            if (File.Exists(normalizedMappingsFile))
+                provider.MappingsContainer = new FileUsmapTypeMappingsProvider(normalizedMappingsFile, pathComparer);
         }
 
         var warnings = new List<string>();
@@ -104,13 +125,13 @@ public static class ProviderTools
         var encryptedCount = provider.UnloadedVfs.Count(v => v.IsEncrypted);
         var fileCount = provider.Files.Count;
 
-        var session = sessions.CreateSession(provider, root, eGame);
+        var session = sessions.CreateSession(provider, normalizedRoot, eGame);
         session.IsInitialized = true;
         session.EncryptedArchiveCount = encryptedCount;
         session.Warnings.AddRange(warnings);
 
-        if (!string.IsNullOrEmpty(mappingsFile) && !File.Exists(mappingsFile))
-            session.Warnings.Add($"Mappings file '{mappingsFile}' not found, loaded without mappings.");
+        if (!string.IsNullOrEmpty(normalizedMappingsFile) && !File.Exists(normalizedMappingsFile))
+            session.Warnings.Add($"Mappings file '{normalizedMappingsFile}' not found, loaded without mappings.");
 
         var result = new
         {
@@ -203,6 +224,7 @@ public static class ProviderTools
         "Call this after init_provider if you didn't provide mappingsFile initially.")]
     public static string SetMappings(
         Cue4ParseSessionRegistry sessions,
+        PathAccessPolicy pathAccessPolicy,
         [Description("Absolute path to the .usmap file.")]
         string mappingsFile,
         [Description("Session ID from init_provider. If omitted, uses the most recent session.")]
@@ -212,12 +234,18 @@ public static class ProviderTools
         if (session == null)
             return Error("no_session", "No provider session found. Call init_provider first.");
 
-        if (!File.Exists(mappingsFile))
-            return Error("file_not_found", $"Mappings file '{mappingsFile}' does not exist.");
+        if (!pathAccessPolicy.TryValidateFile(
+                mappingsFile,
+                out var normalizedMappingsFile,
+                out var mappingsErrorCode,
+                out var mappingsErrorMessage))
+        {
+            return Error(mappingsErrorCode, mappingsErrorMessage);
+        }
 
         try
         {
-            session.Provider.MappingsContainer = new FileUsmapTypeMappingsProvider(mappingsFile, session.Provider.PathComparer);
+            session.Provider.MappingsContainer = new FileUsmapTypeMappingsProvider(normalizedMappingsFile, session.Provider.PathComparer);
             session.ClearPackageCache();
         }
         catch (Exception ex)
@@ -229,7 +257,7 @@ public static class ProviderTools
         {
             ok = true,
             sessionId = session.SessionId,
-            mappingsFile = Path.GetFileName(mappingsFile)
+            mappingsFile = Path.GetFileName(normalizedMappingsFile)
         };
 
         return JsonSerializer.Serialize(result, McpJsonOptions.Default);

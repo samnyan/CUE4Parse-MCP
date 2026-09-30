@@ -1,0 +1,135 @@
+name: build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: 10.0.x
+  PROJECT: CUE4Parse.Mcp.csproj
+  TEST_PROJECT: Tests/CUE4Parse.Mcp.Tests.csproj
+
+jobs:
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            CUE4Parse.Mcp.csproj
+            Tests/CUE4Parse.Mcp.Tests.csproj
+
+      - name: Restore
+        run: dotnet restore "${{ env.TEST_PROJECT }}"
+
+      - name: Build
+        run: dotnet build "${{ env.TEST_PROJECT }}" --configuration Release --no-restore
+
+      - name: Test
+        run: >
+          dotnet test "${{ env.TEST_PROJECT }}"
+          --configuration Release
+          --no-build
+          --no-restore
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    name: Publish ${{ matrix.name }}
+    needs: build-test
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-latest
+            artifact: cue4parse-mcp-win-x64
+            rid: win-x64
+            archive: cue4parse-mcp-win-x64.zip
+          - name: Linux x64
+            runner: ubuntu-latest
+            artifact: cue4parse-mcp-linux-x64
+            rid: linux-x64
+            archive: cue4parse-mcp-linux-x64.tar.gz
+          - name: macOS
+            runner: macos-latest
+            artifact: cue4parse-mcp-macos
+            rid: osx-arm64
+            archive: cue4parse-mcp-macos.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: CUE4Parse.Mcp.csproj
+
+      - name: Publish
+        shell: pwsh
+        run: dotnet publish "${{ env.PROJECT }}" --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:DebugSymbols=false -p:DebugType=None --output "publish/${{ matrix.rid }}"
+
+      - name: Package Windows artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "publish/${{ matrix.rid }}/*" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Publish macOS x64
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: dotnet publish "${{ env.PROJECT }}" --configuration Release --runtime "osx-x64" --self-contained true -p:DebugSymbols=false -p:DebugType=None --output "publish/osx-x64"
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
+        shell: bash
+        run: tar -C "publish/${{ matrix.rid }}" -czf "${{ matrix.archive }}" .
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: tar -C publish -czf "${{ matrix.archive }}" osx-arm64 osx-x64
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

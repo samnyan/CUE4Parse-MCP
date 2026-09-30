@@ -2,7 +2,7 @@
 
 A read-only MCP (Model Context Protocol) server for querying Unreal Engine assets using [CUE4Parse](https://github.com/FabianFG/CUE4Parse).
 
-Built as a .NET 10 stdio-based MCP server. Current package version is `0.2.0`. All logs go to stderr; stdout is reserved for MCP JSON-RPC.
+Built as a .NET 10 MCP server with stdio and Streamable HTTP transports. Current package version is `0.2.0`. All logs go to stderr; stdout is reserved for MCP JSON-RPC when stdio is used.
 
 ## Features
 
@@ -87,6 +87,21 @@ The package directory contains `CUE4Parse.Mcp.exe`, `CUE4Parse.Mcp.dll`, `CUE4Pa
 
 For a release archive, verify the package on a clean Windows x64 machine and test the stdio workflow with `init_provider`, `survey_provider`, `search_assets`, and one package query before shipping it.
 
+## GitHub Actions
+
+The repository includes `.github/workflows/build.yml`.
+
+On pushes to `main`, pull requests targeting `main`, and manual runs, the workflow:
+
+1. restores, builds, and tests the .NET 10 project on Ubuntu;
+2. publishes self-contained release packages on native GitHub-hosted runners;
+3. uploads three platform artifacts:
+   - `cue4parse-mcp-win-x64`
+   - `cue4parse-mcp-linux-x64`
+   - `cue4parse-mcp-macos`
+
+The macOS artifact contains both `osx-arm64` and `osx-x64` publish directories. Linux/macOS outputs are wrapped in `.tar.gz` archives so executable permission bits are preserved. Windows is distributed as a `.zip`.
+
 ## Configure with an MCP Client
 
 For a released MCP package, point the client at the executable in the publish directory:
@@ -121,6 +136,56 @@ For local development only, the client can launch the project through the .NET S
 ```
 
 Do not use `bin\\Release\\net10.0` as a release package; use `dotnet publish` and distribute the complete publish directory.
+
+## Transport Modes
+
+The default transport remains stdio for compatibility:
+
+```powershell
+CUE4Parse.Mcp.exe
+```
+
+Run the server with the MCP Streamable HTTP transport:
+
+```powershell
+CUE4Parse.Mcp.exe --http
+```
+
+The default HTTP endpoint is:
+
+```text
+http://127.0.0.1:3001/mcp
+```
+
+Choose a bind address and port explicitly:
+
+```powershell
+CUE4Parse.Mcp.exe --http --host 0.0.0.0 --port 13337
+```
+
+Restrict filesystem access with one or more whitelist roots:
+
+```powershell
+CUE4Parse.Mcp.exe --http `
+  --host 127.0.0.1 `
+  --port 13337 `
+  --whitelist-dir "D:\\Games" `
+  --whitelist-dir "D:\\Mappings"
+```
+
+Available command-line options:
+
+- `--http` — use Streamable HTTP instead of stdio
+- `--host <host>` — HTTP bind host, default `127.0.0.1`
+- `--port <port>` — HTTP port, default `3001`
+- `--whitelist-dir <directory>` — allow local filesystem access only within this directory; repeat to allow multiple roots
+- `--help` / `-h` — show command-line help
+
+When at least one whitelist root is configured, `init_provider.root`, `init_provider.mappingsFile`, and `set_mappings.mappingsFile` are restricted to the configured roots. Paths are normalized before comparison and symlink/junction targets are checked to prevent escaping the whitelist. Recursive provider scans also reject reparse points that resolve outside all allowed roots.
+
+If no `--whitelist-dir` is supplied, filesystem access remains unrestricted for backward compatibility. HTTP mode prints a warning in this case.
+
+The HTTP transport itself does not add application authentication. Keep the default loopback bind for local use. If the server is exposed to a LAN, VPN, container network, or reverse proxy, use an appropriate firewall/authentication layer and configure a filesystem whitelist.
 
 ## Usage Workflow
 
@@ -221,11 +286,14 @@ For IoStore, `.utoc/.ucas` and any required global container must be present. En
 ```
 CUE4Parse-MCP/
 ├── CUE4Parse.Mcp.csproj      # Project file and NuGet dependencies
-├── Program.cs                # MCP server setup with stdio transport
+├── Program.cs                # MCP server setup for stdio and Streamable HTTP
 ├── McpJsonOptions.cs         # Shared JSON serialization options
 ├── ResponseDtos.cs           # Explicit DTO classes for structured tool responses
 ├── Cue4ParseSession.cs       # Session management and bounded package cache
+├── Configuration/
+│   └── ServerOptions.cs      # Command-line transport/listen/whitelist options
 ├── Services/
+│   ├── PathAccessPolicy.cs   # Filesystem whitelist and link-escape protection
 │   ├── PackageObjectResolver.cs
 │   ├── PropertyPathResolver.cs
 │   ├── BoundedJsonSerializer.cs
