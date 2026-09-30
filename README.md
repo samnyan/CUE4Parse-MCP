@@ -87,6 +87,21 @@ The package directory contains `CUE4Parse.Mcp.exe`, `CUE4Parse.Mcp.dll`, `CUE4Pa
 
 For a release archive, verify the package on a clean Windows x64 machine and test the stdio workflow with `init_provider`, `survey_provider`, `search_assets`, and one package query before shipping it.
 
+## GitHub Actions
+
+The repository includes `.github/workflows/build.yml`.
+
+On pushes to `main`, pull requests targeting `main`, and manual runs, the workflow:
+
+1. restores, builds, and tests the .NET 10 project on Ubuntu;
+2. publishes self-contained release packages on native GitHub-hosted runners;
+3. uploads three platform artifacts:
+   - `cue4parse-mcp-win-x64`
+   - `cue4parse-mcp-linux-x64`
+   - `cue4parse-mcp-macos`
+
+The macOS artifact contains both `osx-arm64` and `osx-x64` publish directories. Linux/macOS outputs are wrapped in `.tar.gz` archives so executable permission bits are preserved. Windows is distributed as a `.zip`.
+
 ## Configure with an MCP Client
 
 For a released MCP package, point the client at the executable in the publish directory:
