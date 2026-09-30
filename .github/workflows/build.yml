@@ -84,11 +84,11 @@ jobs:
             artifact: cue4parse-mcp-linux-x64
             rid: linux-x64
             archive: cue4parse-mcp-linux-x64.tar.gz
-          - name: macOS arm64
+          - name: macOS
             runner: macos-latest
-            artifact: cue4parse-mcp-macos-arm64
+            artifact: cue4parse-mcp-macos
             rid: osx-arm64
-            archive: cue4parse-mcp-macos-arm64.tar.gz
+            archive: cue4parse-mcp-macos.tar.gz
 
     steps:
       - name: Checkout
@@ -110,10 +110,20 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "publish/${{ matrix.rid }}/*" -DestinationPath "${{ matrix.archive }}"
 
-      - name: Package Unix artifact
-        if: runner.os != 'Windows'
+      - name: Publish macOS x64
+        if: runner.os == 'macOS'
+        shell: pwsh
+        run: dotnet publish "${{ env.PROJECT }}" --configuration Release --runtime "osx-x64" --self-contained true -p:DebugSymbols=false -p:DebugType=None --output "publish/osx-x64"
+
+      - name: Package Linux artifact
+        if: runner.os == 'Linux'
         shell: bash
         run: tar -C "publish/${{ matrix.rid }}" -czf "${{ matrix.archive }}" .
+
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: tar -C publish -czf "${{ matrix.archive }}" osx-arm64 osx-x64
 
       - name: Upload package
         uses: actions/upload-artifact@v4
