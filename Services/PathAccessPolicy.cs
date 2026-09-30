@@ -56,6 +56,7 @@ public sealed class PathAccessPolicy
 
     public bool TryValidateDirectoryTree(
         string path,
+        bool recursive,
         out string normalizedPath,
         out string errorCode,
         out string errorMessage)
@@ -95,7 +96,7 @@ public sealed class PathAccessPolicy
                         continue;
                     }
 
-                    if (info is DirectoryInfo)
+                    if (recursive && info is DirectoryInfo)
                         pending.Push(entry);
                 }
             }
