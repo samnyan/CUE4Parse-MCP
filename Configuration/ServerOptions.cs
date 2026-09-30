@@ -30,10 +30,13 @@ public sealed class ServerOptions
                         options = new ServerOptions();
                         return false;
                     }
-                    if (string.IsNullOrWhiteSpace(host))
+                    if (string.IsNullOrWhiteSpace(host) ||
+                        host.Contains("://", StringComparison.Ordinal) ||
+                        host.Contains('/') ||
+                        host.Contains('\\'))
                     {
                         options = new ServerOptions();
-                        error = "--host must not be empty.";
+                        error = "--host must be a hostname or IP address, not a URL.";
                         return false;
                     }
                     break;
