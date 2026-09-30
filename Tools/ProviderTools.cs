@@ -45,9 +45,12 @@ public static class ProviderTools
         bool? skipReferencedTextures = null)
     {
         var recursive = searchOption?.Equals("AllDirectories", StringComparison.OrdinalIgnoreCase) == true;
-        var rootAllowed = recursive
-            ? pathAccessPolicy.TryValidateDirectoryTree(root, out var normalizedRoot, out var rootErrorCode, out var rootErrorMessage)
-            : pathAccessPolicy.TryValidateDirectory(root, out normalizedRoot, out rootErrorCode, out rootErrorMessage);
+        var rootAllowed = pathAccessPolicy.TryValidateDirectoryTree(
+            root,
+            recursive,
+            out var normalizedRoot,
+            out var rootErrorCode,
+            out var rootErrorMessage);
 
         if (!rootAllowed)
             return Error(rootErrorCode, rootErrorMessage);
