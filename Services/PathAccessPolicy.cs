@@ -179,7 +179,8 @@ public sealed class PathAccessPolicy
             return true;
         }
 
-        allowedRoot = _allowedRoots.FirstOrDefault(root => IsWithin(root.LogicalPath, normalizedPath));
+        var candidatePath = normalizedPath;
+        allowedRoot = _allowedRoots.FirstOrDefault(root => IsWithin(root.LogicalPath, candidatePath));
         if (allowedRoot == null)
         {
             errorCode = "path_not_allowed";
